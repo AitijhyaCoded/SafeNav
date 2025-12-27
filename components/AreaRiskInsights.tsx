@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Search, MapPin, AlertCircle, Droplets, ThermometerSun, Activity } from 'lucide-react';
+import RiskMap from './RiskMap';
 
 export default function AreaRiskInsights() {
   const [searchArea, setSearchArea] = useState('');
@@ -118,15 +119,26 @@ const fetchRisk = async () => {
             <div className="space-y-2">
               <label className="text-xs font-bold text-gray-500 uppercase">Localized Heatmap Intensity</label>
               <div className="h-4 w-full bg-gray-100 rounded-full overflow-hidden flex">
-  {(data?.heatmapPoints || []).map((p: any, i: number) => (
-    <div 
-      key={i} 
-      className="h-full bg-red-500 transition-all duration-1000" 
-      style={{ width: `${p.intensity * 100}%`, opacity: p.intensity }}
-    />
-  ))}
-</div>
+                {(data?.heatmapPoints || []).map((p: any, i: number) => (
+                  <div 
+                    key={i} 
+                    className="h-full bg-red-500 transition-all duration-1000" 
+                    style={{ width: `${p.intensity * 100}%`, opacity: p.intensity }}
+                  />
+                ))}
+              </div>
             </div>
+
+            {/* Interactive Map */}
+            {data?.heatmapPoints && data.heatmapPoints.length > 0 && (
+              <RiskMap 
+                lat={data.heatmapPoints[0].lat} 
+                lng={data.heatmapPoints[0].lng} 
+                riskScore={data.riskScore}
+                rain={data.liveRain}
+                humidity={data.humidity}
+              />
+            )}
           </>
         )}
       </CardContent>
