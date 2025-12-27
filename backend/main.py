@@ -50,7 +50,7 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 # allow frontend to talk to backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000","https://safe-nav-three.vercel.app"],  # ok for hackathon
+    allow_origins=["*"],  # ok for hackathon
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
