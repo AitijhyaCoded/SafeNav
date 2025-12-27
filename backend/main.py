@@ -175,9 +175,26 @@ def predict_route_risk(route_coords, month):
     print("Final risk:", final_risk)
     print("Severity:", avg_severity)
 
+    insights = []
+
+    if avg_rain > 5:
+        insights.append("Heavy rainfall detected along the route")
+
+    if exposure > 0.4:
+        insights.append("Large portion of the route passes through flood-prone areas")
+
+    if route_len > 120:
+        insights.append("Longer route increases exposure to waterlogging")
+
+    if month >= 7:
+        insights.append("Monsoon season amplifies flood risk")
+
+    print("Insights:", insights)
+
     return {
         "risk_level": risk_level,
-        "severity": round(final_severity, 2)
+        "severity": round(final_severity, 2),
+        "insights": insights
     }
 
 
@@ -194,8 +211,10 @@ def score_routes(data: RouteRequest):
 
         results.append({
             "route_index": idx,
-            "severity": pred["severity"],   # keep numeric
+            "severity": pred["severity"],
+            "insights": pred["insights"]
         })
+
 
     # 2️⃣ Find worst severity (baseline)
     max_severity = max(r["severity"] for r in results)

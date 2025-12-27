@@ -310,6 +310,15 @@ export default function RouteMap({ startLocation, destination }: RouteMapProps) 
                     <p className={`text-sm ${style.text}`}>
                       Severity: {r.severity.toFixed(2)}
                     </p>
+                    {r.insights && (
+                      <div className="mt-2 space-y-1">
+                        {r.insights.map((text: string, i: number) => (
+                          <p key={i} className="text-xs text-gray-600">
+                            • {text}
+                          </p>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}
