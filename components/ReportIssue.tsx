@@ -215,6 +215,7 @@ export default function ReportIssue() {
                 className="hidden" 
                 accept="image/*" 
                 onChange={handleImageChange}
+                aria-label="Upload issue photo"
               />
             </div>
           </div>
