@@ -32,7 +32,7 @@ load_dotenv()
 
 
 logger.info("🚀 Starting SafeNav Backend...")
-logger.info(f"Loading environment from: {env_path}")
+logger.info(f"Loading environment from: {load_dotenv()}")
 
 # Configure Gemini
 genai.configure(api_key="AIzaSyC6MVwkYVWlbt6laSZy53DXCtdUiaou5SU")
