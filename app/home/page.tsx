@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import RouteMap from '@/components/RouteMap';
 import AreaRiskInsights from '@/components/AreaRiskInsights';
+import ReportIssue from '@/components/ReportIssue';
 import { SignOutButton } from '@clerk/nextjs';
 
 export default function HomePage() {
@@ -42,13 +43,16 @@ export default function HomePage() {
       </nav>
 
       <main className="container mx-auto px-4 py-8 max-w-7xl">
-        <div className="mb-8">
-          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">
-            Plan Your Safe Journey
-          </h1>
-          <p className="text-gray-600 text-lg">
-            Enter your route details to check flood risks and find safer alternatives
-          </p>
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+          <div>
+            <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">
+              Plan Your Safe Journey
+            </h1>
+            <p className="text-gray-600 text-lg">
+              Enter your route details to check flood risks and find safer alternatives
+            </p>
+          </div>
+          <ReportIssue />
         </div>
 
         <Card className="mb-8 shadow-md">

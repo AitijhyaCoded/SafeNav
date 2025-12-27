@@ -1,22 +1,32 @@
 from pydantic import BaseModel
-from typing import List
-from fastapi import FastAPI
+from typing import List, Optional
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import joblib
 import os
 from dotenv import load_dotenv
 from pathlib import Path
 import requests
 import datetime
+import aiofiles
+import uuid
+import google.generativeai as genai
 
 # Load env from parent .env.local
 env_path = Path(__file__).parent.parent / '.env.local'
 load_dotenv(dotenv_path=env_path)
 
+# Configure Gemini
+genai.configure(api_key="AIzaSyC6MVwkYVWlbt6laSZy53DXCtdUiaou5SU")
+
 clf = joblib.load("flood_risk_classifier.pkl")
 reg = joblib.load("flood_severity_regressor.pkl")
 
 app = FastAPI()
+
+# Mount uploads directory to serve images
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # allow frontend to talk to backend
 app.add_middleware(
@@ -26,6 +36,52 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# In-memory storage for reports (replace with DB for production)
+reports_db = []
+
+class Report(BaseModel):
+    id: str
+    lat: float
+    lng: float
+    issue_type: str
+    description: str
+    image_url: Optional[str] = None
+    timestamp: str
+
+@app.post("/report-issue")
+async def report_issue(
+    lat: float = Form(...),
+    lng: float = Form(...),
+    issue_type: str = Form(...),
+    description: str = Form(...),
+    image: UploadFile = File(None)
+):
+    image_url = None
+    if image:
+        filename = f"{uuid.uuid4()}_{image.filename}"
+        filepath = os.path.join("uploads", filename)
+        async with aiofiles.open(filepath, 'wb') as out_file:
+            content = await image.read()
+            await out_file.write(content)
+        image_url = f"http://localhost:8000/uploads/{filename}"
+    
+    report = {
+        "id": str(uuid.uuid4()),
+        "lat": lat,
+        "lng": lng,
+        "issue_type": issue_type,
+        "description": description,
+        "image_url": image_url,
+        "timestamp": datetime.datetime.now().isoformat()
+    }
+    
+    reports_db.append(report)
+    return {"message": "Report submitted successfully", "report": report}
+
+@app.get("/reports")
+def get_reports():
+    return reports_db
 
 @app.get("/")
 def root():
@@ -203,13 +259,73 @@ def get_live_weather(lat, lon):
 
 
 
+def get_reports_on_route(route_coords, reports):
+    on_route_reports = []
+    # Use sampled points for efficiency (every 10th point)
+    sampled_route = route_coords[::10]
+    
+    for report in reports:
+        report_lat = report['lat']
+        report_lng = report['lng']
+        
+        for r_lat, r_lng in sampled_route:
+            # Approx distance check (0.001 deg ~ 111m)
+            if abs(report_lat - r_lat) < 0.001 and abs(report_lng - r_lng) < 0.001:
+                on_route_reports.append(report)
+                break # Found a match for this report, move to next report
+                
+    return on_route_reports
+
+def generate_gemini_summary(route_stats, hazards):
+    try:
+        model = genai.GenerativeModel('gemini-pro')
+        
+        hazards_text = "None"
+        if hazards:
+            hazards_text = "\n".join([f"- {h['issue_type']}: {h['description']}" for h in hazards])
+            
+        prompt = f"""
+        As a navigation assistant, analyze this route's safety based on the provided metrics and user reports.
+        Provide 2-3 concise, helpful bullet points for the driver.
+        
+        Route Metrics:
+        - Overall Risk Level: {route_stats['risk_level']} (0=Safe, 1=Caution, 2=High Risk)
+        - Flood Severity Score: {route_stats['severity']} (Higher means more severe flooding)
+        - Live Rain Intensity: {route_stats['rain']} mm/h
+        
+        User Reported Hazards (verified on route):
+        {hazards_text}
+        
+        Guidelines:
+        1. If hazards exist, prioritize warning the user about them.
+        2. If NO hazards exist, explain the safety status based on rain and risk scores (e.g., "Route is clear with low flood risk", "Caution advised due to heavy rain").
+        3. Keep it short and direct.
+        
+        Output ONLY the bullet points as a list of strings. Do not include "Here is the summary" or markdown formatting like **.
+        """
+        
+        response = model.generate_content(prompt)
+        text = response.text
+        
+        # Clean up response to get a list of strings
+        lines = [line.strip().lstrip('- ').strip() for line in text.split('\n') if line.strip()]
+        return lines
+    except Exception as e:
+        print(f"Gemini Error: {e}")
+        return ["AI Summary unavailable", "Check standard risk metrics"]
+
 def predict_route_risk(route_coords, month):
     risk_preds = []
     severity_preds = []
     route_len = len(route_coords)
 
     # sample every 5th point to reduce computation
-    for lat, lng in route_coords[::10]:
+    sampled_coords = route_coords[::10]
+    
+    # Calculate average rain for the route
+    total_rain = 0
+    
+    for lat, lng in sampled_coords:
         X = [[
             lat,
             lng,
@@ -220,10 +336,11 @@ def predict_route_risk(route_coords, month):
         ]]
 
         rain, humidity = get_live_weather(lat, lng)
+        total_rain += rain
 
         rain_factor = 1 + min(rain / 10, 1)
         proba = clf.predict_proba(X)[0]
-        print("Classifier proba:", proba)
+        # print("Classifier proba:", proba)
 
         # if only one class was trained
         if len(proba) == 1:
@@ -231,18 +348,18 @@ def predict_route_risk(route_coords, month):
         else:
             risk = proba[1] * rain_factor
 
-        print("Flood probability:", risk)
+        # print("Flood probability:", risk)
 
         severity = reg.predict(X)[0]
 
         risk_preds.append(risk)
         severity_preds.append(severity)
 
-    max_risk = max(risk_preds)
-    avg_risk = sum(risk_preds) / len(risk_preds)
+    max_risk = max(risk_preds) if risk_preds else 0
+    avg_risk = sum(risk_preds) / len(risk_preds) if risk_preds else 0
 
     # exposure = how many points are risky
-    exposure = sum(1 for r in risk_preds if r > 0.6) / len(risk_preds)
+    exposure = sum(1 for r in risk_preds if r > 0.6) / (len(risk_preds) if risk_preds else 1)
 
     # route penalty
     length_factor = 1.3 if route_len > 120 else 1.0
@@ -257,40 +374,28 @@ def predict_route_risk(route_coords, month):
     else:
         risk_level = 0      # LOW
 
-    avg_severity = sum(severity_preds) / len(severity_preds)
+    avg_severity = sum(severity_preds) / len(severity_preds) if severity_preds else 0
 
-    # 🔥 amplify with real factors
-    avg_rain = sum(
-        get_live_weather(lat, lng)[0]
-        for lat, lng in route_coords[::10]
-    ) / len(route_coords[::10])
+    avg_rain = total_rain / len(sampled_coords) if sampled_coords else 0
 
     route_complexity = len(route_coords) / 100
 
     final_severity = avg_severity * (1 + avg_rain / 20) * route_complexity
 
-    print("Route len:", route_len)
-    print("Max risk:", max_risk)
-    print("Avg risk:", avg_risk)
-    print("Exposure:", exposure)
-    print("Final risk:", final_risk)
-    print("Severity:", avg_severity)
-
-    insights = []
-
-    if avg_rain > 5:
-        insights.append("Heavy rainfall detected along the route")
-
-    if exposure > 0.4:
-        insights.append("Large portion of the route passes through flood-prone areas")
-
-    if route_len > 120:
-        insights.append("Longer route increases exposure to waterlogging")
-
-    if month >= 7:
-        insights.append("Monsoon season amplifies flood risk")
-
-    print("Insights:", insights)
+    # --- GEMINI INTEGRATION ---
+    # 1. Find hazards on this route
+    on_route_hazards = get_reports_on_route(route_coords, reports_db)
+    
+    # 2. Prepare stats for Gemini
+    route_stats = {
+        "risk_level": risk_level,
+        "severity": round(final_severity, 2),
+        "rain": round(avg_rain, 1),
+        "length": route_len
+    }
+    
+    # 3. Generate summary
+    insights = generate_gemini_summary(route_stats, on_route_hazards)
 
     return {
         "risk_level": risk_level,
