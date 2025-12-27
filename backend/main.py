@@ -278,7 +278,7 @@ def get_reports_on_route(route_coords, reports):
 
 def generate_gemini_summary(route_stats, hazards):
     try:
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         
         hazards_text = "None"
         if hazards:
@@ -300,6 +300,7 @@ def generate_gemini_summary(route_stats, hazards):
         1. If hazards exist, prioritize warning the user about them.
         2. If NO hazards exist, explain the safety status based on rain and risk scores (e.g., "Route is clear with low flood risk", "Caution advised due to heavy rain").
         3. Keep it short and direct.
+        4. The severity of both the best routes is stored in a list. Gemini compares the severity and generates summary based on the comparison of those routes. The better one should include some good recommendation about choosing the route. The better recommended route should not include anything bad about it (like severe flooding or anything).
         
         Output ONLY the bullet points as a list of strings. Do not include "Here is the summary" or markdown formatting like **.
         """
@@ -444,3 +445,445 @@ def score_routes(data: RouteRequest):
         "routes": results,
         "recommended_route": safest["route_index"]
     }
+
+# // ...existing code...
+
+#############################
+
+
+# def generate_gemini_summary(route_stats, hazards, is_recommended=False, comparison_text=""):
+#     try:
+#         model = genai.GenerativeModel('gemini-1.5-flash')
+        
+#         hazards_text = "None"
+#         if hazards:
+#             hazards_text = "\n".join([f"- {h['issue_type']}: {h['description']}" for h in hazards])
+            
+#         context_instruction = ""
+#         if is_recommended:
+#             context_instruction = """
+#             THIS IS THE RECOMMENDED ROUTE. 
+#             - Emphasize that this is the SAFEST choice among available options.
+#             - Even if the risk score is high, frame it as "the best available path" or "least risky option".
+#             - Do NOT discourage the user from taking this route unless it is absolutely impassable.
+#             - Focus on why it's better than alternatives (e.g., "Avoids the most severe waterlogging found on other routes").
+#             """
+#         else:
+#             context_instruction = """
+#             THIS IS NOT THE RECOMMENDED ROUTE.
+#             - Highlight why this route is riskier (e.g., "Higher flood severity", "More reported hazards").
+#             - Suggest avoiding this route in favor of the recommended one.
+#             """
+
+#         prompt = f"""
+#         As a navigation assistant, analyze this route's safety for a driver.
+        
+#         {context_instruction}
+        
+#         Comparison Context: {comparison_text}
+        
+#         Route Metrics:
+#         - Risk Level: {route_stats['risk_level']} (0=Low, 1=Medium, 2=High)
+#         - Flood Severity Score: {route_stats['severity']} (Lower is better)
+#         - Live Rain Intensity: {route_stats['rain']} mm/h
+        
+#         User Reported Hazards (verified on route):
+#         {hazards_text}
+        
+#         Guidelines:
+#         1. Be concise. Provide 2-3 bullet points.
+#         2. Use a helpful, reassuring tone for the recommended route.
+#         3. Be direct about risks for non-recommended routes.
+        
+#         Output ONLY the bullet points as a list of strings. Do not include "Here is the summary" or markdown formatting like **.
+#         """
+        
+#         response = model.generate_content(prompt)
+#         text = response.text
+        
+#         # Clean up response to get a list of strings
+#         lines = [line.strip().lstrip('- ').strip() for line in text.split('\n') if line.strip()]
+#         return lines
+#     except Exception as e:
+#         print(f"Gemini Error: {e}")
+#         return ["AI Summary unavailable", "Check standard risk metrics"]
+
+# def predict_route_risk(route_coords, month):
+#     risk_preds = []
+#     severity_preds = []
+#     route_len = len(route_coords)
+
+#     # sample every 5th point to reduce computation
+#     sampled_coords = route_coords[::10]
+    
+#     # Calculate average rain for the route
+#     total_rain = 0
+    
+#     for lat, lng in sampled_coords:
+#         X = [[
+#             lat,
+#             lng,
+#             month,
+#             0,      # Main Cause Enc (unknown at inference)
+#             1000,   # Area Affected (default)
+#             0       # State Enc (unknown)
+#         ]]
+
+#         rain, humidity = get_live_weather(lat, lng)
+#         total_rain += rain
+
+#         rain_factor = 1 + min(rain / 10, 1)
+#         proba = clf.predict_proba(X)[0]
+#         # print("Classifier proba:", proba)
+
+#         # if only one class was trained
+#         if len(proba) == 1:
+#             risk = proba[0] * rain_factor
+#         else:
+#             risk = proba[1] * rain_factor
+
+#         # print("Flood probability:", risk)
+
+#         severity = reg.predict(X)[0]
+
+#         risk_preds.append(risk)
+#         severity_preds.append(severity)
+
+#     max_risk = max(risk_preds) if risk_preds else 0
+#     avg_risk = sum(risk_preds) / len(risk_preds) if risk_preds else 0
+
+#     # exposure = how many points are risky
+#     exposure = sum(1 for r in risk_preds if r > 0.6) / (len(risk_preds) if risk_preds else 1)
+
+#     # route penalty
+#     length_factor = 1.3 if route_len > 120 else 1.0
+
+#     final_risk = (0.6 * max_risk + 0.4 * avg_risk) * (1 + exposure) * length_factor
+
+
+#     if final_risk > 1.1:
+#         risk_level = 2      # HIGH
+#     elif final_risk > 0.7:
+#         risk_level = 1      # MEDIUM
+#     else:
+#         risk_level = 0      # LOW
+
+#     avg_severity = sum(severity_preds) / len(severity_preds) if severity_preds else 0
+
+#     avg_rain = total_rain / len(sampled_coords) if sampled_coords else 0
+
+#     route_complexity = len(route_coords) / 100
+
+#     final_severity = avg_severity * (1 + avg_rain / 20) * route_complexity
+
+#     # --- GEMINI PREP ---
+#     # 1. Find hazards on this route
+#     on_route_hazards = get_reports_on_route(route_coords, reports_db)
+    
+#     # 2. Prepare stats for Gemini (but don't call it yet)
+#     route_stats = {
+#         "risk_level": risk_level,
+#         "severity": round(final_severity, 2),
+#         "rain": round(avg_rain, 1),
+#         "length": route_len
+#     }
+    
+#     # Return data needed for scoring and summary
+#     return {
+#         "risk_level": risk_level,
+#         "severity": round(final_severity, 2),
+#         "stats": route_stats,
+#         "hazards": on_route_hazards
+#     }
+
+
+
+# @app.post("/score-routes")
+# def score_routes(data: RouteRequest):
+#     temp_results = []
+#     month = 7 if data.mode == "monsoon" else 4
+
+#     # 1️⃣ First: collect raw predictions for ALL routes
+#     for idx, route in enumerate(data.routes):
+#         pred = predict_route_risk(route.coordinates, month)
+#         temp_results.append({
+#             "route_index": idx,
+#             "severity": pred["severity"],
+#             "stats": pred["stats"],
+#             "hazards": pred["hazards"]
+#         })
+
+#     # 2️⃣ Find worst severity (baseline)
+#     if not temp_results:
+#         return {"mode": data.mode, "routes": [], "recommended_route": -1}
+
+#     max_severity = max(r["severity"] for r in temp_results)
+    
+#     # Avoid division by zero
+#     if max_severity == 0: max_severity = 1
+
+#     # 3️⃣ Assign RELATIVE risk levels
+#     for r in temp_results:
+#         ratio = r["severity"] / max_severity
+
+#         if ratio >= 0.9:
+#             r["risk_level"] = 2   # HIGH
+#         elif ratio >= 0.6:
+#             r["risk_level"] = 1   # MEDIUM
+#         else:
+#             r["risk_level"] = 0   # LOW
+            
+#         # Update stats with the relative risk level so Gemini knows
+#         r["stats"]["risk_level"] = r["risk_level"]
+
+#     # 4️⃣ Recommend safest route (lowest severity)
+#     safest_route = min(temp_results, key=lambda r: r["severity"])
+#     safest_index = safest_route["route_index"]
+
+#     # 5️⃣ Generate AI Insights (Now that we know which is best)
+#     final_results = []
+#     for r in temp_results:
+#         is_recommended = (r["route_index"] == safest_index)
+        
+#         # Create comparison text
+#         comparison_text = ""
+#         if is_recommended:
+#             others = [tr for tr in temp_results if tr["route_index"] != r["route_index"]]
+#             if others:
+#                 worst_other = max(others, key=lambda x: x["severity"])
+#                 diff = worst_other["severity"] - r["severity"]
+#                 if diff > 0:
+#                     comparison_text = f"This route has a significantly lower flood severity score ({r['severity']}) compared to the alternative ({worst_other['severity']})."
+
+#         insights = generate_gemini_summary(r["stats"], r["hazards"], is_recommended, comparison_text)
+        
+#         final_results.append({
+#             "route_index": r["route_index"],
+#             "severity": r["severity"],
+#             "risk_level": r["risk_level"],
+#             "insights": insights
+#         })
+
+#     return {
+#         "mode": data.mode,
+#         "routes": final_results,
+#         "recommended_route": safest_index
+#     }
+# def generate_gemini_summary(route_stats, hazards, is_recommended=False, comparison_text=""):
+#     try:
+#         model = genai.GenerativeModel('gemini-1.5-flash')
+        
+#         hazards_text = "None"
+#         if hazards:
+#             hazards_text = "\n".join([f"- {h['issue_type']}: {h['description']}" for h in hazards])
+            
+#         context_instruction = ""
+#         if is_recommended:
+#             context_instruction = """
+#             THIS IS THE RECOMMENDED ROUTE. 
+#             - Emphasize that this is the SAFEST choice among available options.
+#             - Even if the risk score is high, frame it as "the best available path" or "least risky option".
+#             - Do NOT discourage the user from taking this route unless it is absolutely impassable.
+#             - Focus on why it's better than alternatives (e.g., "Avoids the most severe waterlogging found on other routes").
+#             """
+#         else:
+#             context_instruction = """
+#             THIS IS NOT THE RECOMMENDED ROUTE.
+#             - Highlight why this route is riskier (e.g., "Higher flood severity", "More reported hazards").
+#             - Suggest avoiding this route in favor of the recommended one.
+#             """
+
+#         prompt = f"""
+#         As a navigation assistant, analyze this route's safety for a driver.
+        
+#         {context_instruction}
+        
+#         Comparison Context: {comparison_text}
+        
+#         Route Metrics:
+#         - Risk Level: {route_stats['risk_level']} (0=Low, 1=Medium, 2=High)
+#         - Flood Severity Score: {route_stats['severity']} (Lower is better)
+#         - Live Rain Intensity: {route_stats['rain']} mm/h
+        
+#         User Reported Hazards (verified on route):
+#         {hazards_text}
+        
+#         Guidelines:
+#         1. Be concise. Provide 2-3 bullet points.
+#         2. Use a helpful, reassuring tone for the recommended route.
+#         3. Be direct about risks for non-recommended routes.
+        
+#         Output ONLY the bullet points as a list of strings. Do not include "Here is the summary" or markdown formatting like **.
+#         """
+        
+#         response = model.generate_content(prompt)
+#         text = response.text
+        
+#         # Clean up response to get a list of strings
+#         lines = [line.strip().lstrip('- ').strip() for line in text.split('\n') if line.strip()]
+#         return lines
+#     except Exception as e:
+#         print(f"Gemini Error: {e}")
+#         return ["AI Summary unavailable", "Check standard risk metrics"]
+
+# def predict_route_risk(route_coords, month):
+#     risk_preds = []
+#     severity_preds = []
+#     route_len = len(route_coords)
+
+#     # sample every 5th point to reduce computation
+#     sampled_coords = route_coords[::10]
+    
+#     # Calculate average rain for the route
+#     total_rain = 0
+    
+#     for lat, lng in sampled_coords:
+#         X = [[
+#             lat,
+#             lng,
+#             month,
+#             0,      # Main Cause Enc (unknown at inference)
+#             1000,   # Area Affected (default)
+#             0       # State Enc (unknown)
+#         ]]
+
+#         rain, humidity = get_live_weather(lat, lng)
+#         total_rain += rain
+
+#         rain_factor = 1 + min(rain / 10, 1)
+#         proba = clf.predict_proba(X)[0]
+#         # print("Classifier proba:", proba)
+
+#         # if only one class was trained
+#         if len(proba) == 1:
+#             risk = proba[0] * rain_factor
+#         else:
+#             risk = proba[1] * rain_factor
+
+#         # print("Flood probability:", risk)
+
+#         severity = reg.predict(X)[0]
+
+#         risk_preds.append(risk)
+#         severity_preds.append(severity)
+
+#     max_risk = max(risk_preds) if risk_preds else 0
+#     avg_risk = sum(risk_preds) / len(risk_preds) if risk_preds else 0
+
+#     # exposure = how many points are risky
+#     exposure = sum(1 for r in risk_preds if r > 0.6) / (len(risk_preds) if risk_preds else 1)
+
+#     # route penalty
+#     length_factor = 1.3 if route_len > 120 else 1.0
+
+#     final_risk = (0.6 * max_risk + 0.4 * avg_risk) * (1 + exposure) * length_factor
+
+
+#     if final_risk > 1.1:
+#         risk_level = 2      # HIGH
+#     elif final_risk > 0.7:
+#         risk_level = 1      # MEDIUM
+#     else:
+#         risk_level = 0      # LOW
+
+#     avg_severity = sum(severity_preds) / len(severity_preds) if severity_preds else 0
+
+#     avg_rain = total_rain / len(sampled_coords) if sampled_coords else 0
+
+#     route_complexity = len(route_coords) / 100
+
+#     final_severity = avg_severity * (1 + avg_rain / 20) * route_complexity
+
+#     # --- GEMINI PREP ---
+#     # 1. Find hazards on this route
+#     on_route_hazards = get_reports_on_route(route_coords, reports_db)
+    
+#     # 2. Prepare stats for Gemini (but don't call it yet)
+#     route_stats = {
+#         "risk_level": risk_level,
+#         "severity": round(final_severity, 2),
+#         "rain": round(avg_rain, 1),
+#         "length": route_len
+#     }
+    
+#     # Return data needed for scoring and summary
+#     return {
+#         "risk_level": risk_level,
+#         "severity": round(final_severity, 2),
+#         "stats": route_stats,
+#         "hazards": on_route_hazards
+#     }
+
+
+
+# @app.post("/score-routes")
+# def score_routes(data: RouteRequest):
+#     temp_results = []
+#     month = 7 if data.mode == "monsoon" else 4
+
+#     # 1️⃣ First: collect raw predictions for ALL routes
+#     for idx, route in enumerate(data.routes):
+#         pred = predict_route_risk(route.coordinates, month)
+#         temp_results.append({
+#             "route_index": idx,
+#             "severity": pred["severity"],
+#             "stats": pred["stats"],
+#             "hazards": pred["hazards"]
+#         })
+
+#     # 2️⃣ Find worst severity (baseline)
+#     if not temp_results:
+#         return {"mode": data.mode, "routes": [], "recommended_route": -1}
+
+#     max_severity = max(r["severity"] for r in temp_results)
+    
+#     # Avoid division by zero
+#     if max_severity == 0: max_severity = 1
+
+#     # 3️⃣ Assign RELATIVE risk levels
+#     for r in temp_results:
+#         ratio = r["severity"] / max_severity
+
+#         if ratio >= 0.9:
+#             r["risk_level"] = 2   # HIGH
+#         elif ratio >= 0.6:
+#             r["risk_level"] = 1   # MEDIUM
+#         else:
+#             r["risk_level"] = 0   # LOW
+            
+#         # Update stats with the relative risk level so Gemini knows
+#         r["stats"]["risk_level"] = r["risk_level"]
+
+#     # 4️⃣ Recommend safest route (lowest severity)
+#     safest_route = min(temp_results, key=lambda r: r["severity"])
+#     safest_index = safest_route["route_index"]
+
+#     # 5️⃣ Generate AI Insights (Now that we know which is best)
+#     final_results = []
+#     for r in temp_results:
+#         is_recommended = (r["route_index"] == safest_index)
+        
+#         # Create comparison text
+#         comparison_text = ""
+#         if is_recommended:
+#             others = [tr for tr in temp_results if tr["route_index"] != r["route_index"]]
+#             if others:
+#                 worst_other = max(others, key=lambda x: x["severity"])
+#                 diff = worst_other["severity"] - r["severity"]
+#                 if diff > 0:
+#                     comparison_text = f"This route has a significantly lower flood severity score ({r['severity']}) compared to the alternative ({worst_other['severity']})."
+
+#         insights = generate_gemini_summary(r["stats"], r["hazards"], is_recommended, comparison_text)
+        
+#         final_results.append({
+#             "route_index": r["route_index"],
+#             "severity": r["severity"],
+#             "risk_level": r["risk_level"],
+#             "insights": insights
+#         })
+
+#     return {
+#         "mode": data.mode,
+# "routes": final_results,
+# "recommended_route": safest_index
+# }
