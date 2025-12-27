@@ -110,6 +110,37 @@ const endIcon = L.divIcon({
   iconAnchor: [18, 36],
 });
 
+const reportIcon = L.divIcon({
+  html: `
+    <div style="
+      background: #f97316;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      border: 2px solid white;
+    ">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-alert-circle"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+    </div>
+  `,
+  className: "",
+  iconSize: [30, 30],
+  iconAnchor: [15, 15],
+});
+
+interface Report {
+  id: string;
+  lat: number;
+  lng: number;
+  issue_type: string;
+  description: string;
+  image_url: string | null;
+  timestamp: string;
+}
+
 function riskText(level: number) {
   if (level === 2) return "HIGH";
   if (level === 1) return "MEDIUM";
@@ -119,9 +150,49 @@ function riskText(level: number) {
 export default function RouteMap({ startLocation, destination }: RouteMapProps) {
   const mapRef = useRef<L.Map | null>(null);
   const routeLayerRef = useRef<L.LayerGroup | null>(null);
+  const reportsLayerRef = useRef<L.LayerGroup | null>(null);
 
   const [viewMode, setViewMode] = useState<'live' | 'monsoon'>('live');
   const [mlResult, setMlResult] = useState<any>(null);
+  const [reports, setReports] = useState<Report[]>([]);
+
+  useEffect(() => {
+    async function fetchReports() {
+      try {
+        const res = await fetch('http://localhost:8000/reports');
+        const data = await res.json();
+        setReports(data);
+      } catch (error) {
+        console.error("Failed to fetch reports:", error);
+      }
+    }
+    fetchReports();
+  }, []);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    if (!reportsLayerRef.current) {
+      reportsLayerRef.current = L.layerGroup().addTo(mapRef.current);
+    } else {
+      reportsLayerRef.current.clearLayers();
+    }
+
+    reports.forEach(report => {
+      const popupContent = `
+        <div class="p-2 min-w-[200px]">
+          <h3 class="font-bold text-sm mb-1 capitalize">${report.issue_type}</h3>
+          <p class="text-xs text-gray-600 mb-2">${report.description}</p>
+          ${report.image_url ? `<img src="${report.image_url}" class="w-full h-32 object-cover rounded-md" alt="Report Image" />` : ''}
+          <p class="text-[10px] text-gray-400 mt-1">${new Date(report.timestamp).toLocaleString()}</p>
+        </div>
+      `;
+
+      L.marker([report.lat, report.lng], { icon: reportIcon })
+        .addTo(reportsLayerRef.current!)
+        .bindPopup(popupContent);
+    });
+  }, [reports]);
 
   useEffect(() => {
     let cancelled = false;
@@ -311,10 +382,14 @@ export default function RouteMap({ startLocation, destination }: RouteMapProps) 
                       Severity: {r.severity.toFixed(2)}
                     </p>
                     {r.insights && (
-                      <div className="mt-2 space-y-1">
+                      <div className="mt-3 space-y-2">
+                        <div className="flex items-center gap-1 text-xs font-semibold text-gray-700">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-sparkles"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+                          AI Analysis
+                        </div>
                         {r.insights.map((text: string, i: number) => (
-                          <p key={i} className="text-xs text-gray-600">
-                            • {text}
+                          <p key={i} className="text-xs text-gray-600 pl-4 border-l-2 border-gray-300">
+                            {text}
                           </p>
                         ))}
                       </div>
