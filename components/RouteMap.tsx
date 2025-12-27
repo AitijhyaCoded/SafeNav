@@ -5,6 +5,7 @@ import L from 'leaflet';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
 import { MapPin, Navigation, Clock, Droplets, AlertTriangle, CheckCircle } from 'lucide-react';
 
 interface RouteMapProps {
@@ -153,6 +154,7 @@ export default function RouteMap({ startLocation, destination }: RouteMapProps) 
   const reportsLayerRef = useRef<L.LayerGroup | null>(null);
 
   const [viewMode, setViewMode] = useState<'live' | 'monsoon'>('live');
+  const [useDijkstra, setUseDijkstra] = useState(true);
   const [mlResult, setMlResult] = useState<any>(null);
   const [reports, setReports] = useState<Report[]>([]);
 
@@ -249,33 +251,110 @@ export default function RouteMap({ startLocation, destination }: RouteMapProps) 
           routePayload.push({ coordinates: points });
         });
 
-        const response = await fetch("http://127.0.0.1:8000/score-routes", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            routes: routePayload,
-            mode: viewMode,
-          }),
-        });
+        if (useDijkstra) {
+          // Use Dijkstra's algorithm for optimal path
+          const response = await fetch("http://127.0.0.1:8000/dijkstra-multi-route", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              routes: routePayload,
+              mode: viewMode,
+            }),
+          });
 
-        const result = await response.json();
+          const dijkstraResult = await response.json();
 
-        if (cancelled) return;
+          if (cancelled) return;
 
-        setMlResult(result);
-        console.log("ML RESULT FROM BACKEND:", result);
+          console.log("DIJKSTRA RESULT FROM BACKEND:", dijkstraResult);
 
-        routePayload.forEach((route, index) => {
-          const isRecommended = index === result.recommended_route;
+          if (dijkstraResult.success && dijkstraResult.path) {
+            // Draw the optimal path from Dijkstra
+            L.polyline(dijkstraResult.path as L.LatLngExpression[], {
+              color: "#22c55e",
+              weight: 6,
+              opacity: 1,
+            }).addTo(routeLayerRef.current!);
 
-          L.polyline(route.coordinates as L.LatLngExpression[], {
-            color: isRecommended ? "green" : "red",
-            weight: 5,
-            dashArray: isRecommended ? undefined : "8,6",
-          }).addTo(routeLayerRef.current!);
-        });
+            // Draw original routes as faded background for reference
+            routePayload.forEach((route) => {
+              L.polyline(route.coordinates as L.LatLngExpression[], {
+                color: "#94a3b8",
+                weight: 3,
+                opacity: 0.3,
+                dashArray: "5,5",
+              }).addTo(routeLayerRef.current!);
+            });
+
+            // Format result for display
+            setMlResult({
+              mode: dijkstraResult.mode,
+              routes: [{
+                route_index: 0,
+                severity: dijkstraResult.total_risk,
+                risk_level: dijkstraResult.risk_level === "HIGH" ? 2 : 
+                           dijkstraResult.risk_level === "MEDIUM" ? 1 : 0,
+                insights: dijkstraResult.insights,
+                distance_km: dijkstraResult.distance_km,
+                isOptimal: true
+              }],
+              recommended_route: 0
+            });
+          } else {
+            // Fallback to showing original routes if Dijkstra fails
+            console.warn("Dijkstra failed, showing original routes");
+            
+            routePayload.forEach((route, index) => {
+              L.polyline(route.coordinates as L.LatLngExpression[], {
+                color: index === 0 ? "green" : "red",
+                weight: 5,
+                dashArray: index === 0 ? undefined : "8,6",
+              }).addTo(routeLayerRef.current!);
+            });
+
+            setMlResult({
+              mode: viewMode,
+              routes: routePayload.map((_, idx) => ({
+                route_index: idx,
+                severity: 0,
+                risk_level: 0,
+                insights: ["Route analysis unavailable"]
+              })),
+              recommended_route: 0
+            });
+          }
+        } else {
+          // Use original scoring method (safest route only)
+          const response = await fetch("http://127.0.0.1:8000/score-routes", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              routes: routePayload,
+              mode: viewMode,
+            }),
+          });
+
+          const result = await response.json();
+
+          if (cancelled) return;
+
+          setMlResult(result);
+          console.log("ML RESULT FROM BACKEND:", result);
+
+          routePayload.forEach((route, index) => {
+            const isRecommended = index === result.recommended_route;
+
+            L.polyline(route.coordinates as L.LatLngExpression[], {
+              color: isRecommended ? "green" : "red",
+              weight: 5,
+              dashArray: isRecommended ? undefined : "8,6",
+            }).addTo(routeLayerRef.current!);
+          });
+        }
 
         map.fitBounds([
           [startCoords[1], startCoords[0]],
@@ -293,7 +372,7 @@ export default function RouteMap({ startLocation, destination }: RouteMapProps) 
       cancelled = true;
     };
 
-  }, [startLocation, destination, viewMode]);
+  }, [startLocation, destination, viewMode, useDijkstra]);
 
 
   console.log("ORS KEY:", process.env.NEXT_PUBLIC_ORS_KEY);
@@ -352,12 +431,27 @@ export default function RouteMap({ startLocation, destination }: RouteMapProps) 
               <span className="font-semibold">{destination}</span>
             </CardDescription>
           </div>
-          <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'live' | 'monsoon')}>
-            <TabsList>
-              <TabsTrigger value="live">Live Conditions</TabsTrigger>
-              <TabsTrigger value="monsoon">Monsoon Preparedness</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <div className="flex flex-col gap-3">
+            <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'live' | 'monsoon')}>
+              <TabsList>
+                <TabsTrigger value="live">Live Conditions</TabsTrigger>
+                <TabsTrigger value="monsoon">Monsoon Preparedness</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <div className="flex items-center space-x-2 bg-blue-50 p-3 rounded-lg border border-blue-200">
+              <Checkbox 
+                id="dijkstra" 
+                checked={useDijkstra}
+                onCheckedChange={(checked) => setUseDijkstra(checked as boolean)}
+              />
+              <label
+                htmlFor="dijkstra"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+              >
+                Use Dijkstra's Algorithm (Shortest + Safest)
+              </label>
+            </div>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -370,22 +464,43 @@ export default function RouteMap({ startLocation, destination }: RouteMapProps) 
             <div className="space-y-4">
               {mlResult.routes.map((r: any, idx: number) => {
                 const isRecommended = idx === mlResult.recommended_route;
+                const isOptimal = r.isOptimal;
                 const style = routeStyle(r.risk_level, isRecommended);
 
                 return (
                   <div key={idx} className={`p-5 border-2 rounded-xl ${style.bg}`}>
-                    <div className="flex justify-between items-center">
-                      <h3 className="font-bold">Route {idx + 1}</h3>
-                      <Badge>{style.badge}</Badge>
+                    <div className="flex justify-between items-center mb-2">
+                      <h3 className="font-bold flex items-center gap-2">
+                        {isOptimal ? (
+                          <>
+                            <Navigation className="h-4 w-4" />
+                            Optimal Path (Dijkstra)
+                          </>
+                        ) : (
+                          `Route ${idx + 1}`
+                        )}
+                      </h3>
+                      <Badge className={style.badgeClass}>{style.badge}</Badge>
                     </div>
-                    <p className={`text-sm ${style.text}`}>
-                      Severity: {r.severity.toFixed(2)}
-                    </p>
+                    
+                    {r.distance_km && (
+                      <div className="flex items-center gap-4 text-sm mb-2">
+                        <span className="flex items-center gap-1">
+                          <Navigation className="h-3 w-3" />
+                          {r.distance_km} km
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Droplets className="h-3 w-3" />
+                          Risk: {r.severity.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                    
                     {r.insights && (
                       <div className="mt-3 space-y-2">
                         <div className="flex items-center gap-1 text-xs font-semibold text-gray-700">
                           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-sparkles"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
-                          AI Analysis
+                          {isOptimal ? "Route Analysis" : "AI Analysis"}
                         </div>
                         {r.insights.map((text: string, i: number) => (
                           <p key={i} className="text-xs text-gray-600 pl-4 border-l-2 border-gray-300">

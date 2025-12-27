@@ -12,18 +12,37 @@ import datetime
 import aiofiles
 import uuid
 import google.generativeai as genai
+import heapq
+import math
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 # Load env from parent .env.local
 env_path = Path(__file__).parent.parent / '.env.local'
 load_dotenv(dotenv_path=env_path)
 
+logger.info("🚀 Starting SafeNav Backend...")
+logger.info(f"Loading environment from: {env_path}")
+
 # Configure Gemini
 genai.configure(api_key="AIzaSyC6MVwkYVWlbt6laSZy53DXCtdUiaou5SU")
+logger.info("✓ Gemini API configured")
 
+logger.info("Loading ML models...")
 clf = joblib.load("flood_risk_classifier.pkl")
+logger.info("✓ Flood risk classifier loaded")
 reg = joblib.load("flood_severity_regressor.pkl")
+logger.info("✓ Flood severity regressor loaded")
 
 app = FastAPI()
+logger.info("✓ FastAPI app initialized")
 
 # Mount uploads directory to serve images
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
@@ -36,9 +55,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+logger.info("✓ CORS middleware configured")
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("=" * 60)
+    logger.info("🎉 SafeNav Backend is READY!")
+    logger.info("=" * 60)
+    logger.info("📍 Endpoints available:")
+    logger.info("   GET  /health - Health check")
+    logger.info("   GET  /area-risk - Area risk assessment")
+    logger.info("   POST /score-routes - Standard route scoring")
+    logger.info("   POST /dijkstra-multi-route - Dijkstra optimal path")
+    logger.info("   POST /report-issue - Report flood hazard")
+    logger.info("   GET  /reports - Get all reports")
+    logger.info("=" * 60)
 
 # In-memory storage for reports (replace with DB for production)
 reports_db = []
+
+# Weather cache to avoid repeated API calls
+weather_cache = {}
+weather_cache_timeout = 300  # 5 minutes
 
 class Report(BaseModel):
     id: str
@@ -85,10 +123,12 @@ def get_reports():
 
 @app.get("/")
 def root():
+    logger.info("📍 Root endpoint accessed")
     return {"message": "Backend is alive 🚀"}
 
 @app.get("/health")
 def health_check():
+    logger.info("💚 Health check accessed")
     return {"status": "OK"}
 
 @app.get("/safe-route")
@@ -211,6 +251,10 @@ class RouteRequest(BaseModel):
     routes: List[Route]
     mode: str  # "live" or "monsoon"
 
+class DijkstraRequest(BaseModel):
+    routes: List[Route]
+    mode: str  # "live" or "monsoon"
+
 def geocode_location(location_name):
     try:
         api_key = os.getenv("OPENWEATHER_API_KEY")
@@ -228,6 +272,144 @@ def geocode_location(location_name):
         print("Geocoding failed:", e)
         return None, None
 
+def haversine_distance(lat1, lon1, lat2, lon2):
+    """Calculate distance between two points in kilometers"""
+    R = 6371  # Earth's radius in km
+    
+    lat1_rad = math.radians(lat1)
+    lat2_rad = math.radians(lat2)
+    delta_lat = math.radians(lat2 - lat1)
+    delta_lon = math.radians(lon2 - lon1)
+    
+    a = math.sin(delta_lat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(delta_lon/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    
+    return R * c
+
+def predict_point_risk(lat, lng, month):
+    """Predict flood risk for a single point"""
+    try:
+        X = [[lat, lng, month, 0, 1000, 0]]
+        
+        rain, humidity = get_live_weather(lat, lng)
+        rain_factor = 1 + min(rain / 10, 1)
+        
+        proba = clf.predict_proba(X)[0]
+        risk = proba[1] if len(proba) > 1 else proba[0]
+        risk = risk * rain_factor
+        
+        severity = reg.predict(X)[0]
+        
+        return risk, severity, rain
+    except Exception as e:
+        print(f"Risk prediction error: {e}")
+        return 0.5, 1.0, 0.0
+
+def dijkstra_shortest_safest_path(all_routes, month):
+    """
+    Dijkstra's algorithm to find shortest + safest path across multiple routes
+    
+    Edge weight = distance × (1 + risk_factors)
+    This balances shortest distance with flood safety
+    """
+    logger.info("    Building graph from route points...")
+    # Build graph from all route points
+    graph = {}
+    all_points = []
+    point_to_idx = {}
+    
+    # Collect all unique points from all routes
+    for route in all_routes:
+        for point in route:
+            point_tuple = (round(point[0], 6), round(point[1], 6))
+            if point_tuple not in point_to_idx:
+                idx = len(all_points)
+                point_to_idx[point_tuple] = idx
+                all_points.append(point)
+                graph[idx] = []
+    
+    logger.info(f"    Graph has {len(all_points)} unique points")
+    logger.info("    Calculating edge weights with flood risk...")
+    
+    # Build edges within each route
+    edge_count = 0
+    for route in all_routes:
+        for i in range(len(route) - 1):
+            p1 = (round(route[i][0], 6), round(route[i][1], 6))
+            p2 = (round(route[i+1][0], 6), round(route[i+1][1], 6))
+            
+            idx1 = point_to_idx[p1]
+            idx2 = point_to_idx[p2]
+            
+            # Calculate edge weight: distance × risk_weight
+            lat1, lng1 = all_points[idx1]
+            lat2, lng2 = all_points[idx2]
+            
+            distance = haversine_distance(lat1, lng1, lat2, lng2)
+            
+            # Get flood risk for this segment
+            risk, severity, rain = predict_point_risk(lat2, lng2, month)
+            
+            # Weight formula: distance × (1 + risk_factors)
+            # Higher risk = higher weight = avoid this edge
+            risk_weight = 1.0 + (risk * 5) + (severity * 0.5) + (min(rain/10, 1) * 0.3)
+            edge_weight = distance * risk_weight
+            
+            # Add bidirectional edges
+            graph[idx1].append((idx2, edge_weight))
+            graph[idx2].append((idx1, edge_weight))
+            edge_count += 2
+    
+    logger.info(f"    Graph has {edge_count} edges")
+    logger.info("    Running Dijkstra's algorithm...")
+    
+    # Run Dijkstra from start to end
+    start_idx = 0  # First point of first route
+    end_idx = point_to_idx[(round(all_routes[0][-1][0], 6), round(all_routes[0][-1][1], 6))]
+    
+    # Priority queue: (distance, node)
+    pq = [(0, start_idx)]
+    distances = {i: float('inf') for i in range(len(all_points))}
+    distances[start_idx] = 0
+    previous = {i: None for i in range(len(all_points))}
+    visited = set()
+    
+    while pq:
+        current_dist, current = heapq.heappop(pq)
+        
+        if current in visited:
+            continue
+            
+        visited.add(current)
+        
+        if current == end_idx:
+            logger.info(f"    Path found! Visited {len(visited)} nodes")
+            break
+        
+        for neighbor, weight in graph[current]:
+            distance = current_dist + weight
+            
+            if distance < distances[neighbor]:
+                distances[neighbor] = distance
+                previous[neighbor] = current
+                heapq.heappush(pq, (distance, neighbor))
+    
+    # Reconstruct path
+    if distances[end_idx] == float('inf'):
+        logger.warning("    No path found to destination!")
+        return None, float('inf')
+    
+    path = []
+    current = end_idx
+    while current is not None:
+        path.append(all_points[current])
+        current = previous[current]
+    
+    path.reverse()
+    logger.info(f"    Optimal path has {len(path)} points")
+    
+    return path, distances[end_idx]
+
 def get_live_weather(lat, lon):
     try:
         url = "https://api.openweathermap.org/data/2.5/weather"
@@ -243,6 +425,7 @@ def get_live_weather(lat, lon):
 
         # If API error, fallback
         if "main" not in data:
+            logger.warning(f"Weather API error for ({lat}, {lon}): {data}")
             return 0.0, 0.0
 
         rain = 0.0
@@ -254,7 +437,7 @@ def get_live_weather(lat, lon):
         return rain, humidity
 
     except Exception as e:
-        print("Weather API failed:", e)
+        logger.error(f"Weather API failed for ({lat}, {lon}): {e}")
         return 0.0, 0.0
 
 
@@ -408,12 +591,16 @@ def predict_route_risk(route_coords, month):
 
 @app.post("/score-routes")
 def score_routes(data: RouteRequest):
+    logger.info(f"📊 Score-routes called: mode={data.mode}, routes={len(data.routes)}")
+    start_time = datetime.datetime.now()
+    
     results = []
 
     month = 7 if data.mode == "monsoon" else 4
 
     # 1️⃣ First: collect raw predictions
     for idx, route in enumerate(data.routes):
+        logger.info(f"  Analyzing route {idx+1}/{len(data.routes)} ({len(route.coordinates)} points)...")
         pred = predict_route_risk(route.coordinates, month)
 
         results.append({
@@ -440,11 +627,116 @@ def score_routes(data: RouteRequest):
     # 4️⃣ Recommend safest route
     safest = min(results, key=lambda r: r["risk_level"])
 
+    elapsed = (datetime.datetime.now() - start_time).total_seconds()
+    logger.info(f"✓ Score-routes completed in {elapsed:.2f}s - Recommended: Route {safest['route_index']+1}")
+
     return {
         "mode": data.mode,
         "routes": results,
         "recommended_route": safest["route_index"]
     }
+
+@app.post("/dijkstra-multi-route")
+def dijkstra_multi_route(data: DijkstraRequest):
+    """
+    Use Dijkstra's algorithm to find optimal path across multiple routes
+    Balances shortest distance with flood safety
+    """
+    logger.info(f"🎯 Dijkstra-multi-route called: mode={data.mode}, routes={len(data.routes)}")
+    start_time = datetime.datetime.now()
+    
+    try:
+        month = 7 if data.mode == "monsoon" else 4
+        
+        # Extract coordinates from all routes
+        all_routes = [route.coordinates for route in data.routes]
+        total_points = sum(len(r) for r in all_routes)
+        logger.info(f"  Total route points: {total_points}")
+        
+        # Run Dijkstra to find optimal path
+        logger.info("  Running Dijkstra's algorithm...")
+        optimal_path, total_risk = dijkstra_shortest_safest_path(all_routes, month)
+        
+        if optimal_path is None:
+            logger.warning("  ⚠️ No path found!")
+            return {
+                "success": False,
+                "message": "No path found",
+                "path": [],
+                "total_risk": 0,
+                "distance_km": 0,
+                "risk_level": "UNKNOWN",
+                "insights": ["Unable to find safe route"],
+                "mode": data.mode
+            }
+        
+        logger.info(f"  Optimal path found: {len(optimal_path)} points")
+        
+        # Calculate total distance
+        total_distance = 0
+        for i in range(len(optimal_path) - 1):
+            lat1, lng1 = optimal_path[i]
+            lat2, lng2 = optimal_path[i + 1]
+            total_distance += haversine_distance(lat1, lng1, lat2, lng2)
+        
+        # Determine risk level
+        avg_risk = total_risk / len(optimal_path) if optimal_path else 0
+        if avg_risk > 2.5:
+            risk_level = "HIGH"
+        elif avg_risk > 1.5:
+            risk_level = "MEDIUM"
+        else:
+            risk_level = "LOW"
+        
+        logger.info(f"  Distance: {total_distance:.2f}km, Risk: {risk_level}")
+        
+        # Generate insights
+        insights = [
+            f"Optimal path found using Dijkstra's algorithm",
+            f"Total distance: {total_distance:.2f} km",
+            f"Risk level: {risk_level}"
+        ]
+        
+        if data.mode == "monsoon":
+            insights.append("Optimized for monsoon conditions with higher safety priority")
+        else:
+            insights.append("Optimized for current weather conditions")
+        
+        # Check for hazards on route
+        on_route_hazards = get_reports_on_route(optimal_path, reports_db)
+        if on_route_hazards:
+            insights.append(f"⚠️ {len(on_route_hazards)} reported hazard(s) on route")
+        else:
+            insights.append("✓ No reported hazards on this route")
+        
+        elapsed = (datetime.datetime.now() - start_time).total_seconds()
+        logger.info(f"✓ Dijkstra completed in {elapsed:.2f}s")
+        
+        return {
+            "success": True,
+            "path": optimal_path,
+            "total_risk": round(total_risk, 2),
+            "distance_km": round(total_distance, 2),
+            "risk_level": risk_level,
+            "insights": insights,
+            "mode": data.mode,
+            "route_index": 0
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Dijkstra error: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "message": str(e),
+            "path": [],
+            "total_risk": 0,
+            "distance_km": 0,
+            "risk_level": "ERROR",
+            "insights": ["Route optimization failed"],
+            "mode": data.mode
+        }
 
 # // ...existing code...
 
