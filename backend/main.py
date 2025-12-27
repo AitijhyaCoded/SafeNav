@@ -4,6 +4,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import joblib
 import os
+from dotenv import load_dotenv
+from pathlib import Path
+import requests
+import datetime
+
+# Load env from parent .env.local
+env_path = Path(__file__).parent.parent / '.env.local'
+load_dotenv(dotenv_path=env_path)
 
 clf = joblib.load("flood_risk_classifier.pkl")
 reg = joblib.load("flood_severity_regressor.pkl")
@@ -62,6 +70,84 @@ def get_safe_route(start: str, destination: str, mode: str = "live"):
         ]
     }
 
+@app.get("/area-risk")
+def get_area_risk(location: str):
+    lat, lon = geocode_location(location)
+    
+    if lat is None:
+        return {
+            "riskLevel": "Unknown",
+            "liveRain": 0,
+            "riskScore": 0,
+            "humidity": 0,
+            "warnings": ["Location not found"],
+            "heatmapPoints": []
+        }
+
+    current_month = datetime.datetime.now().month
+    
+    # Prepare features for model: [lat, lng, month, 0, 1000, 0]
+    X = [[lat, lon, current_month, 0, 1000, 0]]
+    
+    rain, humidity = get_live_weather(lat, lon)
+    
+    try:
+        proba = clf.predict_proba(X)[0]
+        
+        # Handle probability
+        if len(proba) == 1:
+            base_risk = proba[0]
+        else:
+            # Assuming class 1 is high risk
+            base_risk = proba[1]
+            
+        rain_factor = 1 + min(rain / 10, 1)
+        risk_score_val = base_risk * rain_factor * 10
+        risk_score_val = min(max(risk_score_val, 0), 10)
+        
+        if risk_score_val > 8:
+            risk_level = "High"
+        elif risk_score_val > 4:
+            risk_level = "Medium"
+        else:
+            risk_level = "Low"
+            
+        warnings = []
+        if rain > 0:
+            warnings.append(f"Active rainfall: {rain} mm/h")
+        if risk_level == "High":
+            warnings.append("High waterlogging risk detected")
+        if humidity > 80:
+            warnings.append("High humidity levels")
+        if not warnings:
+            warnings.append("No immediate alerts")
+
+        heatmap_points = [
+            {"lat": lat, "lng": lon, "intensity": risk_score_val / 10},
+            {"lat": lat + 0.001, "lng": lon + 0.001, "intensity": (risk_score_val / 10) * 0.8},
+            {"lat": lat - 0.001, "lng": lon - 0.001, "intensity": (risk_score_val / 10) * 0.9},
+        ]
+
+        return {
+            "riskLevel": risk_level,
+            "liveRain": round(rain, 1),
+            "riskScore": round(risk_score_val, 1),
+            "humidity": humidity,
+            "warnings": warnings,
+            "heatmapPoints": heatmap_points
+        }
+
+    except Exception as e:
+        print("Prediction failed:", e)
+        return {
+            "riskLevel": "Error",
+            "liveRain": 0,
+            "riskScore": 0,
+            "humidity": 0,
+            "warnings": ["Analysis failed"],
+            "heatmapPoints": []
+        }
+
 class Route(BaseModel):
     coordinates: List[List[float]]  # [[lat, lng], ...]
 
@@ -69,7 +155,22 @@ class RouteRequest(BaseModel):
     routes: List[Route]
     mode: str  # "live" or "monsoon"
 
-import requests
+def geocode_location(location_name):
+    try:
+        api_key = os.getenv("OPENWEATHER_API_KEY")
+        if not api_key:
+            print("API Key missing")
+            return None, None
+            
+        url = f"http://api.openweathermap.org/geo/1.0/direct?q={location_name}&limit=1&appid={api_key}"
+        res = requests.get(url, timeout=5)
+        data = res.json()
+        if data:
+            return data[0]['lat'], data[0]['lon']
+        return None, None
+    except Exception as e:
+        print("Geocoding failed:", e)
+        return None, None
 
 def get_live_weather(lat, lon):
     try:

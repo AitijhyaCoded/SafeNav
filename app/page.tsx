@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
-      <nav className="container mx-auto px-4 py-6">
+      {/* <nav className="container mx-auto px-4 py-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Shield className="h-8 w-8 text-blue-600" />
@@ -15,7 +15,7 @@ export default function LandingPage() {
             <Button variant="outline">Sign In</Button>
           </Link>
         </div>
-      </nav>
+      </nav> */}
 
       <main className="container mx-auto px-4 py-12 md:py-20">
         <div className="max-w-4xl mx-auto text-center">
@@ -34,7 +34,7 @@ export default function LandingPage() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
-            <Link href="/auth">
+            <Link href="/home">
               <Button size="lg" className="w-full sm:w-auto text-lg h-14 px-8">
                 Plan a Safer Route
                 <ArrowRight className="ml-2 h-5 w-5" />

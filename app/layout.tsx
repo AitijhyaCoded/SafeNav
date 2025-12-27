@@ -2,6 +2,15 @@ import './globals.css';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import "leaflet/dist/leaflet.css";
+import { Shield } from 'lucide-react';
+import {
+  ClerkProvider,
+  SignInButton,
+  SignUpButton,
+  SignedIn,
+  SignedOut,
+  UserButton,
+} from "@clerk/nextjs";
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -31,8 +40,27 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className={inter.className}>{children}</body>
-    </html>
+    <ClerkProvider>
+      <html lang="en">
+        <body className={inter.className}>
+          <header className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200 shadow-sm">
+            <div className="flex items-center gap-2">
+              <Shield className="w-6 h-6 text-blue-600" />
+              <span className="text-xl font-bold text-gray-900">SafeRoute</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <SignedOut>
+                <SignInButton />
+                <SignUpButton />
+              </SignedOut>
+              <SignedIn>
+                <UserButton />
+              </SignedIn>
+            </div>
+          </header>
+          {children}
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }
