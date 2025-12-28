@@ -35,7 +35,10 @@ logger.info("🚀 Starting SafeNav Backend...")
 logger.info(f"Loading environment from: {load_dotenv()}")
 
 # Configure Gemini
-genai.configure(api_key="AIzaSyC6MVwkYVWlbt6laSZy53DXCtdUiaou5SU")
+gemini_api_key = os.getenv("GEMINI_API_KEY")
+if not gemini_api_key:
+    raise ValueError("GEMINI_API_KEY not found in environment variables")
+genai.configure(api_key=gemini_api_key)
 logger.info("✓ Gemini API configured")
 
 logger.info("Loading ML models...")
@@ -53,7 +56,7 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 # allow frontend to talk to backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # ok for hackathon
+    allow_origins=["https://localhost:3000","*"],  # ok for hackathon
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -462,7 +465,93 @@ def get_reports_on_route(route_coords, reports):
                 
     return on_route_reports
 
-def generate_gemini_summary(route_stats, hazards):
+def generate_fallback_summary(route_stats, hazards, is_recommended=False):
+    """Generate hardcoded but varied summaries based on route severity and risk level"""
+    import random
+    
+    risk_level = route_stats.get('risk_level', 0)
+    severity = route_stats.get('severity', 0)
+    rain = route_stats.get('rain', 0)
+    
+    # Hazards present
+    if hazards:
+        hazard_types = [h.get('issue_type', 'hazard') for h in hazards]
+        hazard_list = ", ".join(hazard_types)
+        
+        if is_recommended:
+            recommended_with_hazards = [
+                [f"⚠️ {len(hazards)} reported hazard(s) on this route ({hazard_list})", 
+                 "Despite hazards, this is still the safest option available",
+                 "Exercise caution and reduce speed when passing hazard zones"],
+                [f"{len(hazards)} user-reported incidents detected",
+                 "Best available route when hazards are accounted for",
+                 "Monitor conditions closely and follow local advisories"],
+                [f"Active hazards present: {hazard_list}",
+                 "Recommended despite challenges - has lowest overall risk",
+                 "Proceed with enhanced awareness and slower speeds"]
+            ]
+            return random.choice(recommended_with_hazards)
+        else:
+            non_recommended_with_hazards = [
+                [f"Multiple hazards reported: {hazard_list}",
+                 f"Severity score ({severity:.2f}) is significantly higher than alternatives",
+                 "Consider the recommended route for safer travel"],
+                [f"{len(hazards)} incidents documented on this path",
+                 "Higher risk route with more reported issues",
+                 "Switch to the recommended alternative for better safety"],
+                [f"Hazard zones detected: {hazard_list}",
+                 "This route carries higher risk than available alternatives",
+                 "Recommended route is the safer choice"]
+            ]
+            return random.choice(non_recommended_with_hazards)
+    
+    # No hazards - generate based on risk level and severity
+    if is_recommended:
+        if risk_level == 0:  # LOW RISK
+            low_risk_recommended = [
+                ["Clear conditions on this route", "Low flood risk expected", "Safe to proceed with normal precautions"],
+                ["Excellent route choice with minimal flood hazard", "Conditions are favorable for travel", "Proceed confidently"],
+                ["This route is the safest option", "Low risk of flooding or water accumulation", "Recommended for best safety"]
+            ]
+            return random.choice(low_risk_recommended)
+        elif risk_level == 1:  # MEDIUM RISK
+            med_risk_recommended = [
+                ["Moderate conditions expected on route", "This is the better option between available routes", "Caution advised due to rain intensity"],
+                ["Best choice with manageable risk level", "Some caution needed but lower risk than alternatives", "Monitor weather conditions"],
+                ["This route has moderate hazard potential", "Still the safest available option", "Drive cautiously and stay alert"]
+            ]
+            return random.choice(med_risk_recommended)
+        else:  # HIGH RISK
+            high_risk_recommended = [
+                ["High risk conditions detected", "This is the least risky available route", "Extreme caution required - consider delaying trip"],
+                ["Severe flood risk on all routes", "This option is the safest available", "Only proceed if absolutely necessary"],
+                ["Critical conditions present", "Recommended as best available choice", "Strong advisory to delay travel if possible"]
+            ]
+            return random.choice(high_risk_recommended)
+    else:
+        if risk_level == 0:  # LOW RISK
+            low_risk_alt = [
+                ["Low risk on this route", "Alternative route has better safety metrics", "Recommended route is preferred"],
+                ["Generally safe conditions", "Not recommended compared to the alternative", "Consider the other route option"],
+                ["Clear path but not optimal", "The other route is safer", "Switch routes for better protection"]
+            ]
+            return random.choice(low_risk_alt)
+        elif risk_level == 1:  # MEDIUM RISK
+            med_risk_alt = [
+                [f"Moderate risk with severity score {severity:.2f}", "The other route is safer", "Switch for better conditions"],
+                ["Caution advised on this path", "Not the recommended choice", "Alternative route is preferable"],
+                ["Some flood risk expected", "Other route has lower severity", "Choose the recommended alternative"]
+            ]
+            return random.choice(med_risk_alt)
+        else:  # HIGH RISK
+            high_risk_alt = [
+                [f"High severity score ({severity:.2f}) on this route", "Significantly riskier than the alternative", "Strongly avoid - use recommended route"],
+                ["Serious flood hazard on this path", "Much safer alternative available", "Do not use this route"],
+                ["Critical risk level detected", "Highly risky compared to recommended route", "Switch to the safer alternative immediately"]
+            ]
+            return random.choice(high_risk_alt)
+
+def generate_gemini_summary(route_stats, hazards, is_recommended=False):
     try:
         model = genai.GenerativeModel('gemini-2.5-flash')
         
@@ -498,8 +587,8 @@ def generate_gemini_summary(route_stats, hazards):
         lines = [line.strip().lstrip('- ').strip() for line in text.split('\n') if line.strip()]
         return lines
     except Exception as e:
-        print(f"Gemini Error: {e}")
-        return ["AI Summary unavailable", "Check standard risk metrics"]
+        logger.warning(f"Gemini API Error: {e}, using fallback summaries")
+        return generate_fallback_summary(route_stats, hazards, is_recommended)
 
 def predict_route_risk(route_coords, month):
     risk_preds = []
@@ -581,13 +670,15 @@ def predict_route_risk(route_coords, month):
         "length": route_len
     }
     
-    # 3. Generate summary
-    insights = generate_gemini_summary(route_stats, on_route_hazards)
+    # 3. Generate summary (without is_recommended context - will be regenerated with context later)
+    insights = generate_gemini_summary(route_stats, on_route_hazards, False)
 
     return {
         "risk_level": risk_level,
         "severity": round(final_severity, 2),
-        "insights": insights
+        "insights": insights,
+        "route_stats": route_stats,
+        "hazards": on_route_hazards
     }
 
 
@@ -609,7 +700,10 @@ def score_routes(data: RouteRequest):
         results.append({
             "route_index": idx,
             "severity": pred["severity"],
-            "insights": pred["insights"]
+            "risk_level": pred["risk_level"],
+            "insights": pred["insights"],
+            "route_stats": pred.get("route_stats"),
+            "hazards": pred.get("hazards", [])
         })
 
 
@@ -628,15 +722,29 @@ def score_routes(data: RouteRequest):
             r["risk_level"] = 0   # LOW
 
     # 4️⃣ Recommend safest route
-    safest = min(results, key=lambda r: r["risk_level"])
+    safest = min(results, key=lambda r: r["severity"])
+    safest_index = safest["route_index"]
+    
+    # 5️⃣ Regenerate insights with is_recommended flag for context-aware summaries
+    final_results = []
+    for r in results:
+        is_recommended = (r["route_index"] == safest_index)
+        insights = generate_gemini_summary(r["route_stats"], r["hazards"], is_recommended)
+        
+        final_results.append({
+            "route_index": r["route_index"],
+            "severity": r["severity"],
+            "risk_level": r["risk_level"],
+            "insights": insights
+        })
 
     elapsed = (datetime.datetime.now() - start_time).total_seconds()
-    logger.info(f"✓ Score-routes completed in {elapsed:.2f}s - Recommended: Route {safest['route_index']+1}")
+    logger.info(f"✓ Score-routes completed in {elapsed:.2f}s - Recommended: Route {safest_index+1}")
 
     return {
         "mode": data.mode,
-        "routes": results,
-        "recommended_route": safest["route_index"]
+        "routes": final_results,
+        "recommended_route": safest_index
     }
 
 @app.post("/dijkstra-multi-route")
