@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
-import { MapPin, Navigation, Clock, Droplets, AlertTriangle, CheckCircle } from 'lucide-react';
+import { MapPin, Navigation, Clock, Droplets, AlertTriangle, CheckCircle, Zap } from 'lucide-react';
 
 interface RouteMapProps {
   startLocation: string;
@@ -418,27 +418,29 @@ export default function RouteMap({ startLocation, destination }: RouteMapProps) 
   }
 
   return (
-    <Card className="shadow-lg">
-      <CardHeader>
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-2xl mb-2">
-              <Navigation className="h-6 w-6 text-blue-600" />
-              Safe Route Finder
-            </CardTitle>
-            <CardDescription className="text-base">
-              Comparing routes from <span className="font-semibold">{startLocation}</span> to{' '}
-              <span className="font-semibold">{destination}</span>
-            </CardDescription>
+    <Card className="shadow-2xl border-0 overflow-hidden">
+      <CardHeader className="bg-gradient-to-r from-blue-50 via-cyan-50 to-blue-50 border-b-2 border-blue-100 pb-6">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+          <div className="flex items-center gap-3 mb-4 lg:mb-0">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center shadow-lg">
+              <Navigation className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <CardTitle className="text-2xl lg:text-3xl">Safe Route Finder</CardTitle>
+              <CardDescription className="text-base mt-1">
+                From <span className="font-semibold text-gray-700">{startLocation}</span> to{' '}
+                <span className="font-semibold text-gray-700">{destination}</span>
+              </CardDescription>
+            </div>
           </div>
-          <div className="flex flex-col gap-3">
-            <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'live' | 'monsoon')}>
-              <TabsList>
-                <TabsTrigger value="live">Live Conditions</TabsTrigger>
-                <TabsTrigger value="monsoon">Monsoon Preparedness</TabsTrigger>
+          <div className="flex flex-col gap-3 lg:w-auto">
+            <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'live' | 'monsoon')} className="w-full">
+              <TabsList className="grid w-full grid-cols-2 bg-white border border-gray-200">
+                <TabsTrigger value="live" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">Live Conditions</TabsTrigger>
+                <TabsTrigger value="monsoon" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">Monsoon Prep</TabsTrigger>
               </TabsList>
             </Tabs>
-            <div className="flex items-center space-x-2 bg-blue-50 p-3 rounded-lg border border-blue-200">
+            <div className="flex items-center space-x-3 bg-white p-3 rounded-xl border border-blue-200 shadow-sm hover:shadow-md transition-shadow">
               <Checkbox 
                 id="dijkstra" 
                 checked={useDijkstra}
@@ -446,77 +448,92 @@ export default function RouteMap({ startLocation, destination }: RouteMapProps) 
               />
               <label
                 htmlFor="dijkstra"
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                className="text-sm font-medium text-gray-700 cursor-pointer flex items-center gap-1"
               >
-                Use Dijkstra's Algorithm (Shortest + Safest)
+                <Zap className="h-4 w-4 text-yellow-600" />
+                Dijkstra Algorithm
               </label>
             </div>
           </div>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div
-            id="route-map"
-            className="aspect-video rounded-xl border-2 border-gray-300"
-          />
-          {mlResult && (
-            <div className="space-y-4">
-              {mlResult.routes.map((r: any, idx: number) => {
-                const isRecommended = idx === mlResult.recommended_route;
-                const isOptimal = r.isOptimal;
-                const style = routeStyle(r.risk_level, isRecommended);
+      <CardContent className="pt-8 pb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2">
+            <div
+              id="route-map"
+              className="aspect-video lg:aspect-auto lg:h-[600px] rounded-2xl border-2 border-gray-200 shadow-lg overflow-hidden hover:shadow-xl transition-shadow"
+            />
+          </div>
+          <div className="space-y-4 lg:max-h-[600px] lg:overflow-y-auto">
+            {mlResult && (
+              <>
+                <div className="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border border-blue-200">
+                  <CheckCircle className="h-5 w-5 text-green-600" />
+                  <span className="font-semibold text-gray-700">Analysis Complete</span>
+                </div>
+                {mlResult.routes.map((r: any, idx: number) => {
+                  const isRecommended = idx === mlResult.recommended_route;
+                  const isOptimal = r.isOptimal;
+                  const style = routeStyle(r.risk_level, isRecommended);
 
-                return (
-                  <div key={idx} className={`p-5 border-2 rounded-xl ${style.bg}`}>
-                    <div className="flex justify-between items-center mb-2">
-                      <h3 className="font-bold flex items-center gap-2">
-                        {isOptimal ? (
-                          <>
-                            <Navigation className="h-4 w-4" />
-                            Optimal Path (Dijkstra)
-                          </>
-                        ) : (
-                          `Route ${idx + 1}`
-                        )}
-                      </h3>
-                      <Badge className={style.badgeClass}>{style.badge}</Badge>
-                    </div>
-                    
-                    {r.distance_km && (
-                      <div className="flex items-center gap-4 text-sm mb-2">
-                        <span className="flex items-center gap-1">
-                          <Navigation className="h-3 w-3" />
-                          {r.distance_km} km
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Droplets className="h-3 w-3" />
-                          Risk: {r.severity.toFixed(2)}
-                        </span>
+                  return (
+                    <div key={idx} className={`p-5 border-2 rounded-2xl transition-all duration-300 hover:shadow-lg ${style.bg}`}>
+                      <div className="flex justify-between items-start mb-3 gap-3">
+                        <h3 className="font-bold text-lg flex items-center gap-2">
+                          {isOptimal ? (
+                            <>
+                              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center">
+                                <Zap className="h-4 w-4 text-white" />
+                              </div>
+                              Optimal Path
+                            </>
+                          ) : (
+                            <>
+                              <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center">
+                                <span className="text-white font-bold text-sm">{idx + 1}</span>
+                              </div>
+                              Route {idx + 1}
+                            </>
+                          )}
+                        </h3>
+                        <Badge className={`${style.badgeClass} px-3 py-1 text-xs font-bold rounded-full`}>{style.badge}</Badge>
                       </div>
-                    )}
-                    
-                    {r.insights && (
-                      <div className="mt-3 space-y-2">
-                        <div className="flex items-center gap-1 text-xs font-semibold text-gray-700">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-sparkles"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
-                          {isOptimal ? "Route Analysis" : "AI Analysis"}
+                      
+                      {r.distance_km && (
+                        <div className="space-y-2 mb-4 text-sm">
+                          <div className="flex items-center gap-2 text-gray-700">
+                            <Navigation className="h-4 w-4 text-blue-600" />
+                            <span><strong>{r.distance_km}</strong> km</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-gray-700">
+                            <AlertTriangle className="h-4 w-4 text-orange-600" />
+                            <span>Risk Score: <strong>{r.severity.toFixed(2)}</strong></span>
+                          </div>
                         </div>
-                        {r.insights.map((text: string, i: number) => (
-                          <p key={i} className="text-xs text-gray-600 pl-4 border-l-2 border-gray-300">
-                            {text}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                      )}
+                      
+                      {r.insights && (
+                        <div className="mt-4 space-y-2 border-t pt-4">
+                          <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 mb-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+                            AI Analysis
+                          </div>
+                          {r.insights.map((text: string, i: number) => (
+                            <p key={i} className="text-xs text-gray-600 pl-3 border-l-2 border-gray-300">
+                              • {text}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </>
+            )}
 
+          </div>
         </div>
       </CardContent>
-    </Card>
-  );
+    </Card>  );
 }
