@@ -30,6 +30,7 @@
 ### Infrastructure
 - **Database**: Supabase
 - **Deployment**: Netlify (Frontend)
+- **IDE**: Kiro Specs and Vibe for Dijkstra's Algorithm
 
 ## 📋 Prerequisites
 
