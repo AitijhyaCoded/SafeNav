@@ -24,15 +24,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Load env from parent .env.local
-# env_path = Path(__file__).parent.parent / '.env.local'
-# load_dotenv(dotenv_path=env_path)
-from dotenv import load_dotenv
-load_dotenv()
-
+# Load environment variables from .env file in the same directory
+env_path = Path(__file__).parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
 logger.info("🚀 Starting SafeNav Backend...")
-logger.info(f"Loading environment from: {load_dotenv()}")
+logger.info(f"Loading environment from: {env_path}")
 
 # Configure Gemini
 gemini_api_key = os.getenv("GEMINI_API_KEY")
