@@ -30,6 +30,7 @@
 ### Infrastructure
 - **Database**: Supabase
 - **Deployment**: Netlify (Frontend)
+- **IDE**: Kiro Specs and Vibe for Dijkstra's Algorithm
 
 ## 📋 Prerequisites
 
@@ -113,7 +114,9 @@ SafeNav/
 │   ├── RiskMap.tsx         # Map visualization
 │   └── RouteMap.tsx        # Navigation component
 ├── lib/                    # Utility functions
-└── public/                 # Static assets
+├──public/                  # Static assets
+├── .kiro/                  # Kiro AI assistant configurations
+└── .bolt/                  # Bolt.new configurations
 ```
 
 ## 🤝 Contributing
