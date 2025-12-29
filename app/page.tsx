@@ -56,7 +56,7 @@ export default function LandingPage() {
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>
-            <Button size="lg" variant="outline" className="w-full sm:w-auto text-lg h-14 px-8 border-white/30 text-white hover:bg-white/10">
+            <Button size="lg" variant="outline" className="text-black w-full sm:w-auto text-lg h-14 px-8 border-white/30 hover:bg-white/10">
               View Features
             </Button>
           </div>

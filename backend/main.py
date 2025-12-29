@@ -340,6 +340,9 @@ def dijkstra_shortest_safest_path(all_routes, month):
     # Build edges within each route
     edge_count = 0
     for route in all_routes:
+        # Optimization: If route is very long (>500 points), sample to reduce graph size?
+        # For now, we rely on weather caching to speed up edge weight calculation.
+        
         for i in range(len(route) - 1):
             p1 = (round(route[i][0], 6), round(route[i][1], 6))
             p2 = (round(route[i+1][0], 6), round(route[i+1][1], 6))
@@ -365,8 +368,8 @@ def dijkstra_shortest_safest_path(all_routes, month):
             graph[idx1].append((idx2, edge_weight))
             graph[idx2].append((idx1, edge_weight))
             edge_count += 2
-    
-    logger.info(f"    Graph has {edge_count} edges")
+            
+    logger.info(f"    Graph built with {edge_count} edges")
     logger.info("    Running Dijkstra's algorithm...")
     
     # Run Dijkstra from start to end
@@ -417,6 +420,15 @@ def dijkstra_shortest_safest_path(all_routes, month):
     return path, distances[end_idx]
 
 def get_live_weather(lat, lon):
+    # Round to 2 decimal places (~1.1km) for caching to group nearby points
+    cache_key = (round(lat, 2), round(lon, 2))
+    current_time = datetime.datetime.now().timestamp()
+    
+    if cache_key in weather_cache:
+        cached_data, timestamp = weather_cache[cache_key]
+        if current_time - timestamp < weather_cache_timeout:
+            return cached_data
+
     try:
         url = "https://api.openweathermap.org/data/2.5/weather"
         params = {
@@ -439,6 +451,9 @@ def get_live_weather(lat, lon):
             rain = data["rain"].get("1h", 0.0)
 
         humidity = data["main"].get("humidity", 0.0)
+        
+        # Update cache
+        weather_cache[cache_key] = ((rain, humidity), current_time)
 
         return rain, humidity
 
@@ -587,7 +602,11 @@ def generate_gemini_summary(route_stats, hazards, is_recommended=False):
         lines = [line.strip().lstrip('- ').strip() for line in text.split('\n') if line.strip()]
         return lines
     except Exception as e:
-        logger.warning(f"Gemini API Error: {e}, using fallback summaries")
+        error_msg = str(e)
+        if "API key" in error_msg or "403" in error_msg:
+            logger.error(f"Gemini API Key Error: {error_msg}. Please check your GEMINI_API_KEY in .env")
+        else:
+            logger.warning(f"Gemini API Error: {e}, using fallback summaries")
         return generate_fallback_summary(route_stats, hazards, is_recommended)
 
 def predict_route_risk(route_coords, month):
