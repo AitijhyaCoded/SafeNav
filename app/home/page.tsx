@@ -5,6 +5,7 @@ import { Shield, LogOut, MapPin, Navigation, AlertTriangle, Zap } from 'lucide-r
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import RouteMap from '@/components/RouteMap';
 import AreaRiskInsights from '@/components/AreaRiskInsights';
@@ -14,6 +15,7 @@ import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from '@cl
 export default function HomePage() {
   const [startLocation, setStartLocation] = useState('');
   const [destination, setDestination] = useState('');
+  const [routeMode, setRouteMode] = useState<'safest' | 'shortest'>('safest');
   const [showResults, setShowResults] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -142,6 +144,60 @@ export default function HomePage() {
                   </div>
                 </div>
 
+                {/* Route Mode Selection */}
+                <div className="space-y-4">
+                  <Label className="text-base font-semibold text-gray-700 flex items-center gap-2">
+                    <Navigation className="h-4 w-4 text-blue-600" />
+                    Route Preference
+                  </Label>
+                  <RadioGroup 
+                    defaultValue="safest" 
+                    value={routeMode} 
+                    onValueChange={(v) => setRouteMode(v as 'safest' | 'shortest')}
+                    className="grid grid-cols-1 md:grid-cols-2 gap-4"
+                  >
+                    <label 
+                      htmlFor="safest"
+                      className={`relative flex items-start space-x-3 border-2 rounded-xl p-4 cursor-pointer transition-all duration-200 ${
+                        routeMode === 'safest' 
+                          ? 'border-blue-500 bg-blue-50/50 ring-1 ring-blue-500 shadow-sm' 
+                          : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <RadioGroupItem value="safest" id="safest" className="mt-1" />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 font-bold text-gray-900 mb-1">
+                          <Shield className={`h-4 w-4 ${routeMode === 'safest' ? 'text-blue-600' : 'text-gray-500'}`} />
+                          Safest Route
+                        </div>
+                        <p className="text-xs text-gray-500 leading-relaxed">
+                          Standard analysis. Prioritizes avoiding flood zones and waterlogging risks.
+                        </p>
+                      </div>
+                    </label>
+
+                    <label 
+                      htmlFor="shortest"
+                      className={`relative flex items-start space-x-3 border-2 rounded-xl p-4 cursor-pointer transition-all duration-200 ${
+                        routeMode === 'shortest' 
+                          ? 'border-blue-500 bg-blue-50/50 ring-1 ring-blue-500 shadow-sm' 
+                          : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <RadioGroupItem value="shortest" id="shortest" className="mt-1" />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 font-bold text-gray-900 mb-1">
+                          <Zap className={`h-4 w-4 ${routeMode === 'shortest' ? 'text-yellow-600' : 'text-gray-500'}`} />
+                          Shortest & Safest
+                        </div>
+                        <p className="text-xs text-gray-500 leading-relaxed">
+                          Advanced Dijkstra algorithm. Balances distance and safety for optimal path.
+                        </p>
+                      </div>
+                    </label>
+                  </RadioGroup>
+                </div>
+
                 <Button 
                   type="submit" 
                   disabled={isLoading}
@@ -172,7 +228,7 @@ export default function HomePage() {
               <div className="w-2 h-2 rounded-full bg-green-600"></div>
               Analysis Complete
             </div>
-            <RouteMap startLocation={startLocation} destination={destination} />
+            <RouteMap startLocation={startLocation} destination={destination} routeMode={routeMode} />
             <AreaRiskInsights />
           </div>
         )}
