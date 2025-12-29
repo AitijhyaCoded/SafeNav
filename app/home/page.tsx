@@ -36,10 +36,7 @@ export default function HomePage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-cyan-500 rounded-lg blur opacity-50"></div>
-                <div className="relative px-3 py-1 bg-white rounded-lg flex items-center justify-center">
-                  <Shield className="h-6 w-6 text-blue-600" />
-                </div>
+                <img src="/logo.png" alt="SafeNav" className="h-20 w-20" />
               </div>
               <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-cyan-500">SafeNav</span>
             </div>

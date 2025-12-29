@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Cloud, MapPin, Shield, ArrowRight, Droplets, Navigation, AlertTriangle } from 'lucide-react';
+import { Cloud, MapPin, ArrowRight, Droplets, Navigation, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function LandingPage() {
@@ -13,14 +13,11 @@ export default function LandingPage() {
       </div>
 
       {/* Navigation */}
-      <nav className="relative z-10 container mx-auto px-4 py-6 border-b border-white/10 sticky top-0 backdrop-blur-md bg-slate-950/50">
+      <nav className="z-10 container mx-auto px-4 py-6 border-b border-white/10 sticky top-0 backdrop-blur-md bg-slate-950/50">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-cyan-500 rounded-lg blur opacity-75"></div>
-              <div className="relative px-3 py-1 bg-slate-900 rounded-lg flex items-center justify-center">
-                <Shield className="h-6 w-6 text-cyan-400" />
-              </div>
+                <img src="/logo.png" alt="SafeNav" className="h-20 w-20" />
             </div>
             <span className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-cyan-300">SafeNav</span>
           </div>
