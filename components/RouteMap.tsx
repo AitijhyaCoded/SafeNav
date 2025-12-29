@@ -11,6 +11,7 @@ import { MapPin, Navigation, Clock, Droplets, AlertTriangle, CheckCircle, Zap } 
 interface RouteMapProps {
   startLocation: string;
   destination: string;
+  routeMode: 'safest' | 'shortest';
 }
 
 async function geocodePlace(place: string) {
@@ -148,13 +149,12 @@ function riskText(level: number) {
   return "LOW";
 }
 
-export default function RouteMap({ startLocation, destination }: RouteMapProps) {
+export default function RouteMap({ startLocation, destination, routeMode }: RouteMapProps) {
   const mapRef = useRef<L.Map | null>(null);
   const routeLayerRef = useRef<L.LayerGroup | null>(null);
   const reportsLayerRef = useRef<L.LayerGroup | null>(null);
 
   const [viewMode, setViewMode] = useState<'live' | 'monsoon'>('live');
-  const [useDijkstra, setUseDijkstra] = useState(true);
   const [mlResult, setMlResult] = useState<any>(null);
   const [reports, setReports] = useState<Report[]>([]);
 
@@ -251,7 +251,7 @@ export default function RouteMap({ startLocation, destination }: RouteMapProps) 
           routePayload.push({ coordinates: points });
         });
 
-        if (useDijkstra) {
+        if (routeMode === 'shortest') {
           // Use Dijkstra's algorithm for optimal path
           const response = await fetch("http://127.0.0.1:8000/dijkstra-multi-route", {
             method: "POST",
@@ -372,8 +372,7 @@ export default function RouteMap({ startLocation, destination }: RouteMapProps) 
       cancelled = true;
     };
 
-  }, [startLocation, destination, viewMode, useDijkstra]);
-
+  }, [startLocation, destination, viewMode, routeMode]);
 
   console.log("ORS KEY:", process.env.NEXT_PUBLIC_ORS_KEY);
 
@@ -440,19 +439,11 @@ export default function RouteMap({ startLocation, destination }: RouteMapProps) 
                 <TabsTrigger value="monsoon" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">Monsoon Prep</TabsTrigger>
               </TabsList>
             </Tabs>
-            <div className="flex items-center space-x-3 bg-white p-3 rounded-xl border border-blue-200 shadow-sm hover:shadow-md transition-shadow">
-              <Checkbox 
-                id="dijkstra" 
-                checked={useDijkstra}
-                onCheckedChange={(checked) => setUseDijkstra(checked as boolean)}
-              />
-              <label
-                htmlFor="dijkstra"
-                className="text-sm font-medium text-gray-700 cursor-pointer flex items-center gap-1"
-              >
-                <Zap className="h-4 w-4 text-yellow-600" />
-                Dijkstra Algorithm
-              </label>
+            <div className="flex items-center space-x-2 bg-white p-3 rounded-xl border border-blue-200 shadow-sm">
+              <div className={`w-3 h-3 rounded-full ${routeMode === 'shortest' ? 'bg-yellow-500' : 'bg-blue-500'}`}></div>
+              <span className="text-sm font-medium text-gray-700">
+                Mode: {routeMode === 'shortest' ? 'Shortest & Safest' : 'Safest Route'}
+              </span>
             </div>
           </div>
         </div>

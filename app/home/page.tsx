@@ -5,6 +5,7 @@ import { Shield, LogOut, MapPin, Navigation, AlertTriangle, Zap } from 'lucide-r
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import RouteMap from '@/components/RouteMap';
 import AreaRiskInsights from '@/components/AreaRiskInsights';
@@ -14,6 +15,7 @@ import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from '@cl
 export default function HomePage() {
   const [startLocation, setStartLocation] = useState('');
   const [destination, setDestination] = useState('');
+  const [routeMode, setRouteMode] = useState<'safest' | 'shortest'>('safest');
   const [showResults, setShowResults] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -142,24 +144,40 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                <Button 
-                  type="submit" 
-                  disabled={isLoading}
-                  size="lg" 
-                  className="w-full md:w-auto h-12 px-8 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 text-white border-0 font-semibold shadow-lg hover:shadow-xl transition-all duration-200"
-                >
-                  {isLoading ? (
-                    <>
-                      <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin mr-2"></div>
-                      Analyzing Routes...
-                    </>
-                  ) : (
-                    <>
-                      <AlertTriangle className="mr-2 h-5 w-5" />
-                      Check Safety
-                    </>
-                  )}
-                </Button>
+                {/* Action Buttons */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                  <Button 
+                    type="submit" 
+                    onClick={() => setRouteMode('safest')}
+                    disabled={isLoading}
+                    size="lg" 
+                    className="h-auto py-4 px-6 bg-white border-2 border-blue-100 hover:border-blue-500 hover:bg-blue-50 text-gray-800 shadow-sm hover:shadow-md transition-all duration-200 group flex flex-col items-start gap-1"
+                  >
+                    <div className="flex items-center gap-2 font-bold text-lg text-blue-700 group-hover:text-blue-800">
+                      <Shield className="h-5 w-5" />
+                      Find Safest Route
+                    </div>
+                    <span className="text-xs text-gray-500 font-normal text-left">
+                      Prioritizes avoiding flood zones & waterlogging
+                    </span>
+                  </Button>
+
+                  <Button 
+                    type="submit" 
+                    onClick={() => setRouteMode('shortest')}
+                    disabled={isLoading}
+                    size="lg" 
+                    className="h-auto py-4 px-6 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-200 group flex flex-col items-start gap-1"
+                  >
+                    <div className="flex items-center gap-2 font-bold text-lg">
+                      <Zap className="h-5 w-5 text-yellow-300" />
+                      Find Shortest & Safest
+                    </div>
+                    <span className="text-xs text-blue-50 font-normal text-left opacity-90">
+                      Uses Dijkstra for optimal balanced path
+                    </span>
+                  </Button>
+                </div>
               </form>
             </CardContent>
           </Card>
@@ -172,7 +190,7 @@ export default function HomePage() {
               <div className="w-2 h-2 rounded-full bg-green-600"></div>
               Analysis Complete
             </div>
-            <RouteMap startLocation={startLocation} destination={destination} />
+            <RouteMap startLocation={startLocation} destination={destination} routeMode={routeMode} />
             <AreaRiskInsights />
           </div>
         )}
