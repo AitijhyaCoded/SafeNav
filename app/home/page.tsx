@@ -144,78 +144,40 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                {/* Route Mode Selection */}
-                <div className="space-y-4">
-                  <Label className="text-base font-semibold text-gray-700 flex items-center gap-2">
-                    <Navigation className="h-4 w-4 text-blue-600" />
-                    Route Preference
-                  </Label>
-                  <RadioGroup 
-                    defaultValue="safest" 
-                    value={routeMode} 
-                    onValueChange={(v) => setRouteMode(v as 'safest' | 'shortest')}
-                    className="grid grid-cols-1 md:grid-cols-2 gap-4"
+                {/* Action Buttons */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                  <Button 
+                    type="submit" 
+                    onClick={() => setRouteMode('safest')}
+                    disabled={isLoading}
+                    size="lg" 
+                    className="h-auto py-4 px-6 bg-white border-2 border-blue-100 hover:border-blue-500 hover:bg-blue-50 text-gray-800 shadow-sm hover:shadow-md transition-all duration-200 group flex flex-col items-start gap-1"
                   >
-                    <label 
-                      htmlFor="safest"
-                      className={`relative flex items-start space-x-3 border-2 rounded-xl p-4 cursor-pointer transition-all duration-200 ${
-                        routeMode === 'safest' 
-                          ? 'border-blue-500 bg-blue-50/50 ring-1 ring-blue-500 shadow-sm' 
-                          : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      <RadioGroupItem value="safest" id="safest" className="mt-1" />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 font-bold text-gray-900 mb-1">
-                          <Shield className={`h-4 w-4 ${routeMode === 'safest' ? 'text-blue-600' : 'text-gray-500'}`} />
-                          Safest Route
-                        </div>
-                        <p className="text-xs text-gray-500 leading-relaxed">
-                          Standard analysis. Prioritizes avoiding flood zones and waterlogging risks.
-                        </p>
-                      </div>
-                    </label>
+                    <div className="flex items-center gap-2 font-bold text-lg text-blue-700 group-hover:text-blue-800">
+                      <Shield className="h-5 w-5" />
+                      Find Safest Route
+                    </div>
+                    <span className="text-xs text-gray-500 font-normal text-left">
+                      Prioritizes avoiding flood zones & waterlogging
+                    </span>
+                  </Button>
 
-                    <label 
-                      htmlFor="shortest"
-                      className={`relative flex items-start space-x-3 border-2 rounded-xl p-4 cursor-pointer transition-all duration-200 ${
-                        routeMode === 'shortest' 
-                          ? 'border-blue-500 bg-blue-50/50 ring-1 ring-blue-500 shadow-sm' 
-                          : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      <RadioGroupItem value="shortest" id="shortest" className="mt-1" />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 font-bold text-gray-900 mb-1">
-                          <Zap className={`h-4 w-4 ${routeMode === 'shortest' ? 'text-yellow-600' : 'text-gray-500'}`} />
-                          Shortest & Safest
-                        </div>
-                        <p className="text-xs text-gray-500 leading-relaxed">
-                          Advanced Dijkstra algorithm. Balances distance and safety for optimal path.
-                        </p>
-                      </div>
-                    </label>
-                  </RadioGroup>
+                  <Button 
+                    type="submit" 
+                    onClick={() => setRouteMode('shortest')}
+                    disabled={isLoading}
+                    size="lg" 
+                    className="h-auto py-4 px-6 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-200 group flex flex-col items-start gap-1"
+                  >
+                    <div className="flex items-center gap-2 font-bold text-lg">
+                      <Zap className="h-5 w-5 text-yellow-300" />
+                      Find Shortest & Safest
+                    </div>
+                    <span className="text-xs text-blue-50 font-normal text-left opacity-90">
+                      Uses Dijkstra for optimal balanced path
+                    </span>
+                  </Button>
                 </div>
-
-                <Button 
-                  type="submit" 
-                  disabled={isLoading}
-                  size="lg" 
-                  className="w-full md:w-auto h-12 px-8 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 text-white border-0 font-semibold shadow-lg hover:shadow-xl transition-all duration-200"
-                >
-                  {isLoading ? (
-                    <>
-                      <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin mr-2"></div>
-                      Analyzing Routes...
-                    </>
-                  ) : (
-                    <>
-                      <AlertTriangle className="mr-2 h-5 w-5" />
-                      Check Safety
-                    </>
-                  )}
-                </Button>
               </form>
             </CardContent>
           </Card>
