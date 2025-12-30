@@ -4,14 +4,30 @@ from firebase_admin import firestore
 import datetime
 from typing import List
 import os
+import json
 
 # Initialize Firebase Admin SDK
-# Ensure serviceAccountKey.json is in the backend directory
+# Check for environment variable first (Production), then file (Local)
+firebase_creds_env = os.getenv("FIREBASE_CREDENTIALS")
 cred_path = os.path.join(os.path.dirname(__file__), 'serviceAccountKey.json')
 
 if not firebase_admin._apps:
-    cred = credentials.Certificate(cred_path)
-    firebase_admin.initialize_app(cred)
+    if firebase_creds_env:
+        # Production: Load from environment variable string
+        try:
+            cred_dict = json.loads(firebase_creds_env)
+            cred = credentials.Certificate(cred_dict)
+            firebase_admin.initialize_app(cred)
+            print("✓ Firebase initialized from environment variable")
+        except json.JSONDecodeError as e:
+            print(f"Error parsing FIREBASE_CREDENTIALS: {e}")
+    elif os.path.exists(cred_path):
+        # Local: Load from file
+        cred = credentials.Certificate(cred_path)
+        firebase_admin.initialize_app(cred)
+        print("✓ Firebase initialized from local file")
+    else:
+        print("Warning: No Firebase credentials found (Env var or File)")
 
 db = firestore.client()
 COLLECTION_NAME = "reports"
