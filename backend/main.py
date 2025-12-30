@@ -15,6 +15,7 @@ import google.generativeai as genai
 import heapq
 import math
 import logging
+import database
 
 # Configure logging
 logging.basicConfig(
@@ -62,6 +63,7 @@ logger.info("✓ CORS middleware configured")
 
 @app.on_event("startup")
 async def startup_event():
+    database.init_db()
     logger.info("=" * 60)
     logger.info("🎉 SafeNav Backend is READY!")
     logger.info("=" * 60)
@@ -73,9 +75,6 @@ async def startup_event():
     logger.info("   POST /report-issue - Report flood hazard")
     logger.info("   GET  /reports - Get all reports")
     logger.info("=" * 60)
-
-# In-memory storage for reports (replace with DB for production)
-reports_db = []
 
 # Weather cache to avoid repeated API calls
 weather_cache = {}
@@ -100,12 +99,19 @@ async def report_issue(
 ):
     image_url = None
     if image:
-        filename = f"{uuid.uuid4()}_{image.filename}"
-        filepath = os.path.join("uploads", filename)
-        async with aiofiles.open(filepath, 'wb') as out_file:
-            content = await image.read()
-            await out_file.write(content)
-        image_url = f"http://localhost:8000/uploads/{filename}"
+        try:
+            # Try to save locally, but don't crash if it fails (e.g. read-only filesystem)
+            os.makedirs("uploads", exist_ok=True)
+            filename = f"{uuid.uuid4()}_{image.filename}"
+            filepath = os.path.join("uploads", filename)
+            async with aiofiles.open(filepath, 'wb') as out_file:
+                content = await image.read()
+                await out_file.write(content)
+            image_url = f"http://localhost:8000/uploads/{filename}"
+        except Exception as e:
+            logger.error(f"Failed to save image locally: {e}")
+            # Continue without image
+            image_url = None
     
     report = {
         "id": str(uuid.uuid4()),
@@ -117,12 +123,12 @@ async def report_issue(
         "timestamp": datetime.datetime.now().isoformat()
     }
     
-    reports_db.append(report)
+    database.add_report(report)
     return {"message": "Report submitted successfully", "report": report}
 
 @app.get("/reports")
 def get_reports():
-    return reports_db
+    return database.get_all_reports()
 
 @app.get("/")
 def root():
@@ -462,16 +468,17 @@ def get_live_weather(lat, lon):
 
 def get_reports_on_route(route_coords, reports):
     on_route_reports = []
-    # Use sampled points for efficiency (every 10th point)
-    sampled_route = route_coords[::10]
+    # Use ALL points for accuracy, not sampled points
+    # sampled_route = route_coords[::10] 
     
     for report in reports:
         report_lat = report['lat']
         report_lng = report['lng']
         
-        for r_lat, r_lng in sampled_route:
+        for r_lat, r_lng in route_coords:
             # Approx distance check (0.001 deg ~ 111m)
-            if abs(report_lat - r_lat) < 0.001 and abs(report_lng - r_lng) < 0.001:
+            # Increased threshold slightly to 0.0015 (~160m) to catch near-road hazards
+            if abs(report_lat - r_lat) < 0.0015 and abs(report_lng - r_lng) < 0.0015:
                 on_route_reports.append(report)
                 break # Found a match for this report, move to next report
                 
@@ -676,7 +683,7 @@ def predict_route_risk(route_coords, month):
 
     # --- GEMINI INTEGRATION ---
     # 1. Find hazards on this route
-    on_route_hazards = get_reports_on_route(route_coords, reports_db)
+    on_route_hazards = get_reports_on_route(route_coords, database.get_all_reports())
     
     # 2. Prepare stats for Gemini
     route_stats = {
@@ -830,7 +837,7 @@ def dijkstra_multi_route(data: DijkstraRequest):
             insights.append("Optimized for current weather conditions")
         
         # Check for hazards on route
-        on_route_hazards = get_reports_on_route(optimal_path, reports_db)
+        on_route_hazards = get_reports_on_route(optimal_path, database.get_all_reports())
         if on_route_hazards:
             insights.append(f"⚠️ {len(on_route_hazards)} reported hazard(s) on route")
         else:

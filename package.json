@@ -54,6 +54,7 @@
     "embla-carousel-react": "^8.3.0",
     "eslint": "8.49.0",
     "eslint-config-next": "13.5.1",
+    "firebase": "^12.7.0",
     "input-otp": "^1.2.4",
     "leaflet": "^1.9.4",
     "leaflet.heat": "^0.2.0",

@@ -229,6 +229,7 @@ export default function ReportIssue() {
                 accept="image/*"
                 onChange={handleImageChange}
                 className="hidden"
+                aria-label="Upload photo"
               />
               {image ? (
                 <div className="flex items-center justify-center gap-2 text-pink-600 font-semibold">
