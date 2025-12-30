@@ -91,7 +91,8 @@ export default function ReportIssue() {
     }
 
     try {
-      const res = await fetch('http://localhost:8000/report-issue', {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const res = await fetch(`${backendUrl}/report-issue`, {
         method: 'POST',
         body: formData,
       });

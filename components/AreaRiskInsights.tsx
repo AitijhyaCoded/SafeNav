@@ -16,7 +16,8 @@ export default function AreaRiskInsights() {
   const fetchRisk = async () => {
     setLoading(true);
     try {
-      const url = `http://localhost:8000/area-risk?location=${encodeURIComponent(searchArea || 'Mumbai')}`;
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const url = `${backendUrl}/area-risk?location=${encodeURIComponent(searchArea || 'Mumbai')}`;
       const res = await fetch(url);
       const result = await res.json();
       setData(result);

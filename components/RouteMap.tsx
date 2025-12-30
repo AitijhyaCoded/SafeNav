@@ -161,7 +161,8 @@ export default function RouteMap({ startLocation, destination, routeMode }: Rout
   useEffect(() => {
     async function fetchReports() {
       try {
-        const res = await fetch('http://localhost:8000/reports');
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+        const res = await fetch(`${backendUrl}/reports`);
         const data = await res.json();
         setReports(data);
       } catch (error) {
@@ -253,7 +254,8 @@ export default function RouteMap({ startLocation, destination, routeMode }: Rout
 
         if (routeMode === 'shortest') {
           // Use Dijkstra's algorithm for optimal path
-          const response = await fetch("http://127.0.0.1:8000/dijkstra-multi-route", {
+          const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+          const response = await fetch(`${backendUrl}/dijkstra-multi-route`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -327,7 +329,8 @@ export default function RouteMap({ startLocation, destination, routeMode }: Rout
           }
         } else {
           // Use original scoring method (safest route only)
-          const response = await fetch("http://127.0.0.1:8000/score-routes", {
+          const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+          const response = await fetch(`${backendUrl}/score-routes`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",

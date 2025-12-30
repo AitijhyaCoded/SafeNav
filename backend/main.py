@@ -107,7 +107,9 @@ async def report_issue(
             async with aiofiles.open(filepath, 'wb') as out_file:
                 content = await image.read()
                 await out_file.write(content)
-            image_url = f"http://localhost:8000/uploads/{filename}"
+            
+            base_url = os.getenv("BACKEND_URL", "http://localhost:8000")
+            image_url = f"{base_url}/uploads/{filename}"
         except Exception as e:
             logger.error(f"Failed to save image locally: {e}")
             # Continue without image
