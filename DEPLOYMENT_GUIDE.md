@@ -42,6 +42,7 @@ Render is excellent for Python apps.
     *   `PYTHON_VERSION`: `3.9.0` (Recommended for ML compatibility)
     *   `GEMINI_API_KEY`: (Paste your key from .env.local)
     *   `OPENWEATHER_API_KEY`: (Paste your key from .env.local)
+    *   `BACKEND_URL`: (Paste your Render URL here, e.g., `https://safenav-backend.onrender.com`. No trailing slash.)
     *   `FIREBASE_CREDENTIALS`: (Paste the *content* of your `serviceAccountKey.json` file here as a single line string. *Note: You will need to update `database.py` to read this if you haven't already, or just commit the json file if it's a private repo for a hackathon.*)
         *   *Hackathon Shortcut:* Since this is a hackathon, you can commit `serviceAccountKey.json` to your private repo. Render will pick it up.
 6.  **Deploy:** Click **Create Web Service**.
